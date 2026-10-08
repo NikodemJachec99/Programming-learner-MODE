@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const DB_FILE = 'mentor.db';
 export const BUSY_TIMEOUT_MS = 10_000;
 export const BUSY_RETRIES = 5;
@@ -190,11 +190,48 @@ CREATE INDEX idx_misconceptions_resolved ON misconceptions(resolved_at);
 CREATE INDEX idx_knowledge_next_review   ON knowledge(next_review_at);
 `;
 
+// v2: Change Lab. Każda zmiana Claude w pliku z kodem przed i po (okno wokół zmiany),
+// zapisana z narzędzia (originalFile + patch), nigdy odtwarzana.
+const SCHEMA_V2 = `
+CREATE TABLE changes (
+  id           TEXT PRIMARY KEY,
+  session_id   TEXT,
+  project_id   TEXT,
+  turn_key     TEXT,
+  turn_label   TEXT,
+  ts           INTEGER NOT NULL,
+  tool         TEXT,
+  kind         TEXT,
+  status       TEXT NOT NULL DEFAULT 'ok',
+  file_path    TEXT,
+  lang         TEXT,
+  line         INTEGER,
+  added        INTEGER,
+  removed      INTEGER,
+  summary      TEXT,
+  concepts_json TEXT CHECK (concepts_json IS NULL OR json_valid(concepts_json)),
+  facts_json   TEXT CHECK (facts_json IS NULL OR json_valid(facts_json)),
+  unified      TEXT,
+  before_text  TEXT,
+  before_start INTEGER,
+  after_text   TEXT,
+  after_start  INTEGER
+) STRICT;
+CREATE INDEX idx_changes_project_ts ON changes(project_id, ts);
+CREATE INDEX idx_changes_turn       ON changes(turn_key);
+`;
+
 export const MIGRATIONS = Object.freeze([
   {
     version: 1,
     up(db) {
       db.exec(SCHEMA_V1);
+    },
+  },
+  {
+    version: 2,
+    up(db) {
+      db.exec(SCHEMA_V2);
     },
   },
 ]);

@@ -71,13 +71,13 @@ function spawnCli(input) {
 test('1. fresh init creates schema v1 in WAL mode; second init is a no-op', (t) => {
   const dir = tmpDir(t);
   const v = one(dir, 'init');
-  assert.equal(v.schemaVersion, 1);
-  assert.equal(SCHEMA_VERSION, 1);
+  assert.equal(v.schemaVersion, SCHEMA_VERSION);
+  assert.equal(SCHEMA_VERSION, 2);
   assert.equal(v.dbPath, path.join(dir, 'mentor.db'));
   assert.match(v.sqliteVersion, /^3\./);
 
   const db = rawDb(dir);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 1);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
   assert.equal(db.prepare('PRAGMA journal_mode').get().journal_mode, 'wal');
   const tables = db
     .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -93,7 +93,7 @@ test('1. fresh init creates schema v1 in WAL mode; second init is a no-op', (t) 
   const v2 = one(dir, 'init');
   assert.deepEqual(v2, v);
   const db2 = rawDb(dir);
-  assert.equal(db2.prepare('PRAGMA user_version').get().user_version, 1);
+  assert.equal(db2.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
   assert.deepEqual(db2.prepare('SELECT sql FROM sqlite_schema ORDER BY name').all(), schemaBefore);
   db2.close();
   assert.equal(fs.existsSync(path.join(dir, 'backups')), false, 'no migration backup on no-op init');
@@ -372,7 +372,7 @@ test('6b. concurrency: 8 processes cold-start the same empty dataDir', async (t)
     assert.ok(res.results.every((r) => r.ok), JSON.stringify(res));
   }
   const db = rawDb(dir);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 1);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
   assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   db.close();
   assert.equal(fs.existsSync(path.join(dir, 'backups')) && fs.readdirSync(path.join(dir, 'backups')).length > 0, false);
@@ -412,7 +412,7 @@ test('7. export -> wipe -> import(replace) round-trips exactly', (t) => {
   assert.match(path.basename(exp.path), /^mentor-export-\d{8}-\d{6}\.json$/);
   const file1 = JSON.parse(fs.readFileSync(exp.path, 'utf8'));
   assert.equal(file1.format, 'claude-code-mentor-export');
-  assert.equal(file1.schemaVersion, 1);
+  assert.equal(file1.schemaVersion, SCHEMA_VERSION);
   assert.equal(file1.tables.lessons.length, 2);
 
   // wipe guard
@@ -525,22 +525,22 @@ test('9. migration takes a VACUUM INTO backup before upgrading a non-empty DB', 
   const ctx = openDatabase(dir);
   let res;
   try {
-    const v2 = [...MIGRATIONS, { version: 2, up: (db) => db.exec('CREATE TABLE extra (x INTEGER) STRICT') }];
+    const v2 = [...MIGRATIONS, { version: SCHEMA_VERSION + 1, up: (db) => db.exec('CREATE TABLE extra (x INTEGER) STRICT') }];
     res = migrate(ctx.db, v2, dir);
-    assert.equal(res.from, 1);
-    assert.equal(res.to, 2);
-    assert.equal(ctx.db.prepare('PRAGMA user_version').get().user_version, 2);
+    assert.equal(res.from, SCHEMA_VERSION);
+    assert.equal(res.to, SCHEMA_VERSION + 1);
+    assert.equal(ctx.db.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION + 1);
     // running again is a no-op without a new backup
-    assert.deepEqual(migrate(ctx.db, v2, dir), { from: 2, to: 2, backup: null });
+    assert.deepEqual(migrate(ctx.db, v2, dir), { from: SCHEMA_VERSION + 1, to: SCHEMA_VERSION + 1, backup: null });
   } finally {
     ctx.db.close();
   }
   assert.ok(res.backup);
-  assert.match(path.basename(res.backup), /^pre-migration-v1-\d{8}-\d{6}(-\d+)?\.db$/);
+  assert.match(path.basename(res.backup), new RegExp(`^pre-migration-v${SCHEMA_VERSION}-\\d{8}-\\d{6}(-\\d+)?\\.db$`));
   assert.equal(path.dirname(res.backup), path.join(dir, 'backups'));
   assert.ok(fs.existsSync(res.backup));
   const b = new DatabaseSync(res.backup, { readOnly: true });
-  assert.equal(b.prepare('PRAGMA user_version').get().user_version, 1);
+  assert.equal(b.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
   assert.equal(b.prepare('SELECT count(*) n FROM lessons').get().n, 2);
   assert.equal(b.prepare("SELECT count(*) n FROM sqlite_schema WHERE name='extra'").get().n, 0);
   b.close();
@@ -555,9 +555,9 @@ test('9. migration takes a VACUUM INTO backup before upgrading a non-empty DB', 
   one(dir2, 'init');
   const ctx2 = openDatabase(dir2);
   try {
-    const broken = [...MIGRATIONS, { version: 2, up: (db) => { db.exec('CREATE TABLE half (x)'); throw new Error('boom'); } }];
+    const broken = [...MIGRATIONS, { version: SCHEMA_VERSION + 1, up: (db) => { db.exec('CREATE TABLE half (x)'); throw new Error('boom'); } }];
     assert.throws(() => migrate(ctx2.db, broken, dir2), /boom/);
-    assert.equal(ctx2.db.prepare('PRAGMA user_version').get().user_version, 1);
+    assert.equal(ctx2.db.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
     assert.equal(ctx2.db.prepare("SELECT count(*) n FROM sqlite_schema WHERE name='half'").get().n, 0);
   } finally {
     ctx2.db.close();
@@ -585,7 +585,7 @@ test('10. CLI contract: malformed stdin, unknown op, bad request', async (t) => 
   assert.equal(unk.stdout.split('\n').filter(Boolean).length, 1);
   const res = JSON.parse(unk.stdout);
   assert.equal(res.ok, true);
-  assert.equal(res.schemaVersion, 1);
+  assert.equal(res.schemaVersion, SCHEMA_VERSION);
   assert.deepEqual(res.results[0], { ok: false, error: 'unknown op: frobnicate' });
   assert.equal(res.results[1].ok, true);
   assert.equal(res.results[2].ok, false);
@@ -689,4 +689,60 @@ test('13. default data dir follows the platform and CLAUDE_CODE_MENTOR_DATA over
     if (saved === undefined) delete process.env.CLAUDE_CODE_MENTOR_DATA;
     else process.env.CLAUDE_CODE_MENTOR_DATA = saved;
   }
+});
+
+test('14. change lab: v1 database upgrades with data intact, changes save, list, prune and never leave via export', (t) => {
+  // baza w schemacie v1 z danymi, jak u obecnych użytkowników
+  const dir = tmpDir(t);
+  const v1 = openDatabase(dir, { migrations: MIGRATIONS.filter((m) => m.version === 1) });
+  v1.db.close();
+  seedRichDataV1(dir);
+  const before = run(dir, [{ op: 'diag' }])[0].value.counts;
+  const saved = one(dir, 'saveChange', {
+    change: {
+      id: 'c1', sessionId: 's1', projectId: 'p1', turnKey: 's1:1', turnLabel: 'dodaj walidację', ts: T0, tool: 'Edit', kind: 'edit',
+      file: 'src/a.ts', lang: 'ts', line: 3, added: 1, removed: 1, concepts: ['cond'], facts: ['Warunek: x < 10 → x <= 10'],
+      unified: '@@ -3,1 +3,1 @@\n-if (x < 10) {}\n+if (x <= 10) {}', before: 'if (x < 10) {}', beforeStart: 3, after: 'if (x <= 10) {}', afterStart: 3,
+    },
+  });
+  assert.equal(saved.id, 'c1');
+  const after = run(dir, [{ op: 'diag' }])[0].value;
+  assert.equal(after.schemaVersion, SCHEMA_VERSION);
+  for (const [table, n] of Object.entries(before)) if (table !== 'changes') assert.equal(after.counts[table], n, `${table} preserved`);
+  const list = one(dir, 'getChanges', { projectId: 'p1' });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].hasBefore, true);
+  assert.equal(list[0].before, undefined, 'list carries no code');
+  const full = one(dir, 'getChange', { id: 'c1' });
+  assert.equal(full.before, 'if (x < 10) {}');
+  assert.equal(full.after, 'if (x <= 10) {}');
+  assert.deepEqual(full.facts, ['Warunek: x < 10 → x <= 10']);
+  // nowy plik: brak "przed" zostaje brakiem, nie pustym tekstem
+  one(dir, 'saveChange', { change: { id: 'c2', projectId: 'p1', ts: T0 + 1, kind: 'create', file: 'b.ts', after: 'export const b = 1' } });
+  assert.equal(one(dir, 'getChange', { id: 'c2' }).before, null);
+  // retencja: starsze niż 60 dni znikają przy kolejnym zapisie
+  one(dir, 'saveChange', { change: { id: 'c3', projectId: 'p1', ts: T0 + 61 * DAY, kind: 'edit', file: 'c.ts' } });
+  assert.deepEqual(one(dir, 'getChanges', { projectId: 'p1' }).map((c) => c.id), ['c3']);
+  // eksport nie zawiera kodu zmian, wipe je kasuje
+  const exp = one(dir, 'export', {});
+  assert.equal(JSON.parse(fs.readFileSync(exp.path, 'utf8')).tables.changes, undefined);
+  one(dir, 'wipe', { confirm: WIPE_CONFIRM });
+  assert.equal(one(dir, 'getChanges', {}).length, 0);
+});
+
+function seedRichDataV1(dir) {
+  const ctx = openDatabase(dir, { migrations: MIGRATIONS.filter((m) => m.version === 1) });
+  try {
+    ctx.db.prepare("INSERT INTO projects(id, root, name) VALUES ('p1', 'C:/proj', 'proj')").run();
+    ctx.db.prepare("INSERT INTO lessons(id, project_id, ts, concept_ids_json, title, body_json, source) VALUES ('l1', 'p1', 1, '[]', 't', '{}', 'builtin')").run();
+  } finally {
+    ctx.db.close();
+  }
+}
+
+test('15. version shown in the panel header matches plugin.json', () => {
+  const root = path.resolve(HELPER_DIR, '..');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
+  const src = fs.readFileSync(path.join(root, 'hooks', 'version.ts'), 'utf8');
+  assert.equal(/MENTOR_VERSION = '([^']+)'/.exec(src)?.[1], manifest.version);
 });

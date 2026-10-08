@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instaluje Programming Learner MODE (Claude Code Mentor + context-bar) globalnie, w user scope.
+# Instaluje Programming Learner MODE (Claude Code Mentor) globalnie, w user scope.
 # macOS i Linux. Na Windows użyj scripts/install.ps1.
 #
 #   1. Sprawdza Claude Code CLI i Node.js 22.5+ (wbudowany node:sqlite).
@@ -12,15 +12,13 @@
 #
 # Użycie:
 #   bash scripts/install.sh
-#   bash scripts/install.sh --from-github --skip-context-bar
+#   bash scripts/install.sh --from-github
 set -euo pipefail
 
 FROM_GITHUB=0
-SKIP_CONTEXT_BAR=0
 for arg in "$@"; do
   case "$arg" in
     --from-github) FROM_GITHUB=1 ;;
-    --skip-context-bar) SKIP_CONTEXT_BAR=1 ;;
     -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) echo "Nieznana opcja: $arg" >&2; exit 2 ;;
   esac
@@ -31,7 +29,6 @@ MENTOR_DIR="$ROOT/plugins/claude-code-mentor"
 MARKET='programming-learner-mode'
 REPO='NikodemJachec99/Programming-learner-MODE'
 PLUGINS='claude-code-mentor'
-[ "$SKIP_CONTEXT_BAR" = 1 ] || PLUGINS="$PLUGINS context-bar"
 
 if [ -n "${CLAUDE_CODE_MENTOR_DATA:-}" ]; then
   DATA_DIR="$CLAUDE_CODE_MENTOR_DATA"
@@ -95,6 +92,11 @@ fi
 
 step 'Instalacja (user scope)'
 LIST="$(claude plugin list 2>&1 || true)"
+# pasek kontekstu jest teraz częścią Mentora: stary osobny plugin zdejmujemy
+if printf '%s' "$LIST" | grep -q "context-bar@$MARKET"; then
+  claude plugin uninstall "context-bar@$MARKET" --scope user || true
+  ok 'Usunięty stary context-bar (pasek jest teraz w Mentorze)'
+fi
 for p in $PLUGINS; do
   id="$p@$MARKET"
   if printf '%s' "$LIST" | grep -q "$id"; then

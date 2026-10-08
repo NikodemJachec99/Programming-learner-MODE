@@ -7,15 +7,15 @@
   <a href="#wymagania"><img alt="Windows i macOS" src="https://img.shields.io/badge/Windows%20%7C%20macOS-0078d4?style=flat-square"></a>
   <a href="#flutter-i-dart"><img alt="Flutter i Dart" src="https://img.shields.io/badge/Flutter%20%26%20Dart-02569B?style=flat-square&logo=flutter&logoColor=white"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-62%20%2F%2062-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-80%20%2F%2080-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licencja-MIT-6b7280?style=flat-square"></a>
 </p>
 
 <p align="center">
   <b>Claude pisze kod. Ty rozumiesz, dlaczego on działa.</b><br>
-  Dwa mody do Claude Code: osobisty nauczyciel programowania, który uczy na zmianach w Twoim projekcie,<br>
-  i pasek kontekstu, który pokazuje, ile tokenów zostało i kiedy wygaśnie cache.
+  Jeden mod do Claude Code: osobisty nauczyciel programowania, który uczy na zmianach w Twoim projekcie,<br>
+  z paskiem kontekstu, który pokazuje, ile tokenów zostało i kiedy wygaśnie cache.
 </p>
 
 ---
@@ -24,12 +24,13 @@
 
 - [Po co to jest](#po-co-to-jest)
 - [Co dostajesz](#co-dostajesz)
+- [Change Lab](#change-lab)
 - [Jak to działa](#jak-to-działa)
 - [Instalacja](#instalacja)
 - [Pierwsze kroki](#pierwsze-kroki)
 - [Claude Code Mentor](#claude-code-mentor)
 - [Flutter i Dart](#flutter-i-dart)
-- [Context Bar](#context-bar)
+- [Pasek kontekstu](#pasek-kontekstu)
 - [Prywatność](#prywatność)
 - [Koszty](#koszty)
 - [Dane i kopie zapasowe](#dane-i-kopie-zapasowe)
@@ -56,6 +57,7 @@ Wszystko dzieje się w osobnym panelu obok rozmowy. Normalna praca z Claude zost
     <td width="50%" valign="top">
       <h3>🎓 Claude Code Mentor</h3>
       <ul>
+        <li><b>Change Lab</b>: każda zmiana Claude z kodem przed i po, uruchomienie obu wersji na tych samych danych i inne podejście do wyboru.</li>
         <li><b>Lekcje z prawdziwych zmian</b>: kod z Twojego projektu, plik i numer linii, mechanizm, powód, alternatywy, typowe błędy.</li>
         <li><b>Symulator wykonania</b> dla JS/TS i Darta: STEP, BACK, RUN, zmienne, stos wywołań, kolejki event loop, podmiana operatorów <code>&lt;</code> → <code>&lt;=</code> i porównanie wariantów.</li>
         <li><b>Flutter</b>: lekcje o widgetach, stanie, layoucie i nawigacji, drzewo widgetów z Twojego <code>build()</code>.</li>
@@ -64,20 +66,37 @@ Wszystko dzieje się w osobnym panelu obok rozmowy. Normalna praca z Claude zost
       </ul>
     </td>
     <td width="50%" valign="top">
-      <h3>📊 Context Bar</h3>
+      <h3>📊 Pasek kontekstu</h3>
       <ul>
         <li><b>Pasek okna kontekstu</b> nad polem promptu, podzielony na kategorie: system, narzędzia, MCP, skille, wiadomości.</li>
         <li><b>Dymki po najechaniu</b>: nazwa kategorii, tokeny i procent.</li>
         <li><b>Licznik cache promptu</b>: ile zostało do wygaśnięcia, żeby następna wiadomość nie płaciła za cały kontekst od nowa.</li>
-        <li><b>Strefy ostrzegawcze</b> od 60% i 80% oraz przycisk <b>Mentor</b>.</li>
+        <li><b>Strefy ostrzegawcze</b> od 60% i 80% oraz przycisk <b>Mentor</b>. Wbudowany w Mentora, włączany w Ustawieniach.</li>
       </ul>
     </td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/assets/context-bar.png" alt="Context Bar nad polem promptu" width="620">
+  <img src="docs/assets/context-bar.png" alt="Pasek kontekstu nad polem promptu" width="620">
 </p>
+
+## Change Lab
+
+Pierwsza zakładka panelu. Odpowiada na pytanie: co Claude właśnie zmienił i co to zmienia w działaniu.
+
+0. **Na start** karta z jednym zdaniem o tym, co tu jest, i testem poziomu: 6 pytań „co wypisze ten kod”, od zmiennych do pętli zdarzeń. Wynik ustawia punkt startowy, a Ścieżka przed testem nie poleca podstaw na ślepo.
+1. **Lista zmian** pogrupowana po Twoich poleceniach („dodaj walidację emaila”), z plikiem, liczbą linii i tym, co warto zrozumieć. Podstawy (zmienne, funkcje, pętle) i pojęcia już opanowane nie są wypisywane. Historia zostaje między sesjami.
+2. **Jedno kliknięcie** otwiera zmianę: krótko co się zmieniło, a pod spodem przełącznik **Zmiany / Przed / Po**. Opis rozpoznaje typowe przeróbki: pętla z `await` → `Promise.all`, pętla z `push` → `map`/`filter`, `.then` → `await`, dodany `try`/`catch`, sprawdzenie `null`, `throw`, typy, test.
+3. **Wyjaśnij** pokazuje lekcję o tej zmianie na miejscu, pod kodem, bez przeskakiwania do innej zakładki. Pod lekcją dwa dopytania: „Co jest pod spodem” i „Inny przykład”.
+4. **▶ Uruchom przed i po** ładuje obie wersje do symulatora z tymi samymi danymi. Gdy Claude zmienił `if (x < 10)` na `if (x <= 10)`, Mentor sam podstawia wartość z diffu (`label(10)`), czyli dokładnie przypadek brzegowy. „Porównaj A i B” pokazuje różnicę wprost: „w A `x < 10` → false, w B `x <= 10` → true; A wypisało „dużo”, B wypisało „mało””.
+5. **Sprawdź się** zadaje pytanie z tej konkretnej zmiany: te same dane idą przez kod przed i po, a Ty przewidujesz wynik wersji po. Odpowiedź liczy symulator, nie model. Gdy kodu nie da się uruchomić (np. Python), zamiast tego jest **zgadywanie zmiany**: widzisz kod przed i swoje polecenie, bierzesz podpowiedź (gdzie i co, bez rozwiązania), a potem odsłaniasz prawdziwą zmianę.
+6. **Inne podejście** prosi model o 1 albo 2 naprawdę inne rozwiązania tego samego problemu, z zaletami, wadami i tym, kiedy je wybrać. Każde można porównać z obecnym w symulatorze.
+7. **Poproś Claude o to** wstawia gotową prośbę do pola wiadomości. Kod się nie zmienia, dopóki sam jej nie wyślesz Enterem, a zmiana przechodzi przez zwykłe narzędzia i uprawnienia Claude.
+
+Skąd „przed”: Edit i Write zwracają treść pliku sprzed zmiany i dokładny patch. Mentor bierze „przed” z tej treści, a „po” liczy, nakładając na nią ten patch. Niczego nie odtwarza ani nie zgaduje. Gdy narzędzie nie odda poprzedniej wersji (np. bardzo duży plik), widok „Przed” jest oznaczony jako niedostępny. Nieudane i odrzucone edycje są na liście jako nieudane, bez kodu. Pliki wrażliwe tylko jako wpis bez treści.
+
+Każdy wynik ma etykietę: diff jest z narzędzia, przebieg pochodzi z symulatora (model JS/Darta, nie prawdziwe środowisko), a inne podejście to propozycja AI, niesprawdzona.
 
 ## Jak to działa
 
@@ -118,10 +137,9 @@ W sesji Claude Code w terminalu:
 ```text
 /plugin marketplace add NikodemJachec99/Programming-learner-MODE
 /plugin install claude-code-mentor@programming-learner-mode
-/plugin install context-bar@programming-learner-mode
 ```
 
-Wybierz zakres **user**, żeby mody działały w każdym projekcie.
+Wybierz zakres **user**, żeby Mentor działał w każdym projekcie.
 
 ### Opcja B: skrypt instalacyjny (zalecany)
 
@@ -146,7 +164,6 @@ bash scripts/install.sh
 | Windows | macOS / Linux | Co robi |
 |---|---|---|
 | `-FromGitHub` | `--from-github` | rejestruje marketplace z GitHuba zamiast lokalnego klonu |
-| `-SkipContextBar` | `--skip-context-bar` | instaluje tylko Mentora |
 
 Na macOS Node najprościej doinstalować przez `brew install node`. Skrypt zapisuje pełną ścieżkę do Node, bo Claude Desktop nie widzi `PATH` z Twojej powłoki.
 
@@ -168,6 +185,10 @@ bash scripts/uninstall.sh --delete-data       # z usunięciem danych (najpierw e
 bash scripts/diagnose.sh                      # diagnostyka, niczego nie zmienia
 ```
 
+Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.3.0”).
+
+Pracujesz nad kodem Mentora? Po każdej zmianie wystarczy `node scripts/update-local.mjs`: przepisuje wersję z `plugin.json` do kodu i marketplace, aktualizuje instalację i wgrywa nowy kod do cache, więc w otwartej sesji działa już `/reload-plugins`.
+
 ## Pierwsze kroki
 
 1. Otwórz nową sesję w zakładce **Code** w Claude Desktop, w dowolnym projekcie.
@@ -178,6 +199,7 @@ bash scripts/diagnose.sh                      # diagnostyka, niczego nie zmienia
 | Polecenie | Działanie |
 |---|---|
 | `/mentor` | otwiera panel |
+| `/mentor zmiany` | lista zmian Claude (Change Lab) |
 | `/mentor explain` | pogłębiona lekcja o ostatniej istotnej zmianie |
 | `/mentor quiz` | ćwiczenie do bieżącego tematu |
 | `/mentor sim` | symulator dla zaznaczonego tekstu |
@@ -186,8 +208,8 @@ bash scripts/diagnose.sh                      # diagnostyka, niczego nie zmienia
 | `/mentor path` | ścieżka nauki i graf pojęć |
 | `/mentor pause` / `resume` | wstrzymanie i wznowienie automatycznych lekcji |
 | `/mentor settings` / `diag` | ustawienia, dane, diagnostyka |
-| `/context-bar` | włącza i wyłącza pasek |
-| `/context-bar ttl 5` | czas życia cache: 5 albo 60 minut |
+| `/mentor pasek` | włącza i wyłącza pasek kontekstu |
+| `/mentor pasek ttl 5` | czas życia cache: 5 albo 60 minut |
 
 ## Claude Code Mentor
 
@@ -209,17 +231,17 @@ bash scripts/diagnose.sh                      # diagnostyka, niczego nie zmienia
 
 ### Siedem widoków
 
-Główne zakładki to **Teraz**, **Lekcja**, **Symulator** i **Ćwiczenia**. Pozostałe są w menu **Więcej**.
+Na pasku są trzy: **Zmiany**, **Ćwiczenia** i **Symulator**. Wszystko zaczyna się od Zmian. Reszta jest w menu **Więcej**.
 
 | Zakładka | Co zawiera |
 |---|---|
-| **Teraz** | projekt, ostatnie operacje Claude (plik, linia, +/−), wykryte mechanizmy, najważniejsza rzecz do zrozumienia, brakujące podstawy, powtórki |
-| **Lekcja** | lekcja o konkretnej zmianie w dwóch widokach: *Analiza zmiany* (co, gdzie, po co, składnia, mechanizm, zależności, dlaczego, alternatywy, błędy, weryfikacja) albo *Nauka warstwami* (intuicja, kod, mechanizm, dlaczego, praktyka, sprawdzenie) |
+| **Zmiany** | Change Lab: lista zmian po poleceniach, kod przed i po, uruchomienie obu wersji, inne podejście |
+| **Ćwiczenia** | pytania o Twój kod, podpowiedzi krok po kroku, odsłonięcie odpowiedzi, ocena, wykryte nieporozumienia, przykład z innej strony, zadanie utrwalające |
 | **Symulator** | wykonanie krok po kroku (JS/TS i Dart), drzewo widgetów Fluttera, eksplorator warunków dla JS, Pythona, PHP i Darta, piaskownica SQL |
-| **Ćwiczenia** | pytania o Twój kod, ocena, wykryte nieporozumienia, przykład z innej strony, zadanie utrwalające |
-| **Moja wiedza** | pojęcia na 5 poziomach, opanowanie, pewność oceny, historia, błędne przekonania |
-| **Ścieżka** | następne kroki z uzasadnieniem, graf zależności pojęć, mapa kompetencji |
-| **Ustawienia** | nauka, częstotliwość, szczegółowość, koszty, model, prywatność, eksport i import, diagnostyka |
+| **Lekcje** (Więcej) | wszystkie lekcje: jedno zdanie na start, kod, trzy sekcje do rozwinięcia (jak to działa, na co uważać, jak sprawdzić) i dopytania |
+| **Moja wiedza** (Więcej) | pojęcia na 5 poziomach, opanowanie, pewność oceny, historia, błędne przekonania. Filtry tylko dla poziomów, które coś zawierają |
+| **Ścieżka** (Więcej) | następne kroki z uzasadnieniem, graf zależności dla Twojego projektu (najwyżej 14 pojęć), mapa kompetencji |
+| **Ustawienia** (Więcej) | na wierzchu 3 rzeczy: automatyczne nauczanie, pasek kontekstu, koszty AI. Reszta w „Zaawansowane” |
 
 ### Lekcja rozdziela fakt od domysłu
 
@@ -236,13 +258,16 @@ Deterministyczny interpreter podzbioru JavaScript i TypeScript, napisany od zera
 
 | Funkcja | Opis |
 |---|---|
-| `STEP` `BACK` `RESET` `RUN` | przejście po krokach w obie strony |
-| `EXPLAIN` / `WHY` | co robi bieżący krok i dlaczego wykonuje się właśnie teraz |
+| `↺` `◀` `Krok ▶` `Do końca ⏭` | przejście po krokach w obie strony |
+| Karta kroku | linia, „dlaczego teraz”, zmienne, stos, kolejki i wyjście w jednym miejscu, „więcej o tym kroku” na życzenie |
+| Przykładowe dane | kod, który tylko definiuje funkcje, dostaje wywołanie z danymi dobranymi z typów i nazw parametrów (np. `loadOrders(["1", "2"])`). Własne wywołanie wpisujesz obok |
 | Zmienne i stos | wartości przed i po, zmienione zmienne podświetlone, ramki wywołań z argumentami |
 | Event loop | kolejka mikrozadań i makrozadań, `await`, `Promise`, `setTimeout` w kolejności zgodnej ze specyfikacją |
-| What-if | zamiana operatora albo wartości tworzy wariant B, `COMPARE` opisuje różnicę prostym językiem |
+| What-if | schowane pod jednym przyciskiem: zamiana operatora albo wartości tworzy wariant B, „Porównaj A i B” opisuje różnicę prostym językiem |
 | Warunki | `x < 10` kontra `x <= 10` dla przypadków brzegowych, z semantyką JS, Pythona 3, PHP 8 i Darta 3 |
 | SQL | prawdziwy SQLite w pamięci: FROM i JOIN, WHERE z wartością UNKNOWN dla NULL, GROUP BY, wynik |
+
+**Wycinki kodu też się wykonują.** Kod z lekcji albo zaznaczenia to często środek funkcji: zaczyna się od `}`, ma `catch` bez `try` albo używa nazw zdefiniowanych gdzie indziej. Symulator domyka nawiasy w tych samych liniach, a nazwom spoza wycinka daje wartości zastępcze `‹nazwa›`. Wszystko to jest wypisane w „Założeniach symulatora”, więc wiadomo, co jest umowne.
 
 Rzeczy niedeterministyczne, takie jak `fetch`, `Math.random` czy `Date.now`, są wyraźnie oznaczone jako założenia, a nie zweryfikowane wykonanie.
 
@@ -284,7 +309,9 @@ Do tego 10 nowych pojęć w grafie wiedzy (obszar *Flutter i aplikacje mobilne*)
 
 **Drzewo widgetów.** Kodu interfejsu nie da się wykonać bez silnika Fluttera, więc dla pliku z `build()` symulator pokazuje drzewo widgetów: kto jest rodzicem, co siedzi w `child:`, a co w `children:`, z numerami linii.
 
-## Context Bar
+## Pasek kontekstu
+
+Część Mentora, nie osobny mod. Włączasz go w Ustawieniach albo przez `/mentor pasek`.
 
 - Jedna linia nad promptem: kolorowy pasek, procent zajętości, licznik cache, przycisk **Mentor**.
 - Na Claude Desktop pasek jest rysowany w SVG z dymkami. W terminalu jest wersją tekstową.
@@ -297,6 +324,7 @@ Do tego 10 nowych pojęć w grafie wiedzy (obszar *Flutter i aplikacje mobilne*)
 - **Pliki wrażliwe są pomijane:** `.env*`, klucze, certyfikaty, `credentials`, `secrets`, `.npmrc`, `.ssh`, `wp-config.php`.
 - **Sekrety są wycinane** przed zapisem i przed wysłaniem do AI: klucze API Anthropic, OpenAI, Stripe, Google i AWS, tokeny GitHub i Slack, JWT, hasła w adresach URL i przypisaniach, klucze prywatne.
 - Ustawienie **„nie wysyłaj kodu”** całkowicie wyłącza przekazywanie kodu do lekcji AI.
+- **Kod zmian w Change Lab** jest tylko lokalnie: okno wokół zmiany (do kilkuset linii), po wycięciu sekretów, do 400 zmian na projekt i najwyżej 60 dni. Nie trafia do eksportu JSON. Ustawienie **„Zapisuj kod zmian”** wyłącza jego zapis, zostaje sam opis zmiany.
 - Lekcje AI idą tym samym kanałem i kontem co sam Claude Code. Nie startują tury w rozmowie i niczego nie zmieniają w plikach.
 
 ## Koszty
@@ -331,7 +359,7 @@ Zmienna `CLAUDE_CODE_MENTOR_DATA` pozwala wskazać inny katalog. W środku:
 
 | Co | Plik |
 |---|---|
-| Baza nauki | `mentor.db` (SQLite, WAL) |
+| Baza nauki | `mentor.db` (SQLite, WAL), w tym historia zmian Change Lab |
 | Kopie zapasowe | `backups/`: codziennie 10 ostatnich, osobne przed migracją, importem i usunięciem |
 | Eksporty JSON | `exports/` |
 | Ścieżka do Node | `runtime.json` |
@@ -348,12 +376,10 @@ plugins/
     hooks/mentor.ts         kontroler: obserwacje, priorytety, kolejka lekcji, ćwiczenia, zapis
     hooks/engine/           pojęcia, diff, ochrona sekretów, lekcje, ćwiczenia, koszty, graf
     hooks/sim/              lexer, parser, interpreter z event loop, tłumacz Darta, semantyka wartości, warianty
-    hooks/ui/               panel (7 zakładek) i pasek nad promptem
+    hooks/ui/               panel (8 widoków), pasek kontekstu i temat nad promptem
     hooks/content/          biblioteka 89 pojęć (w tym Flutter) z grafem, błędnymi przekonaniami i pytaniami
     helper/mentor-db.mjs    SQLite: migracje, WAL, transakcje, model opanowania, powtórki
     helper/sql-sandbox.mjs  piaskownica SQL w pamięci
-  context-bar/
-    hooks/register.tsx      pasek kontekstu, SVG z dymkami, licznik cache
 scripts/                    install, uninstall, diagnose (.ps1 dla Windows, .sh dla macOS i Linuxa)
 ```
 
@@ -368,8 +394,8 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/claude-code-mentor`: symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 41 / 41 |
-| `node --test` helpera bazy: migracje, model opanowania, 8 procesów równolegle, eksport i import, katalog danych per system | 16 / 16 |
+| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 57 / 57 |
+| `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian | 18 / 18 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |
 
@@ -420,15 +446,16 @@ Tylko przy lekcji AI: nazwa pojęcia, Twój poziom, fragment zmienionego kodu po
 
 ## In English
 
-**Programming Learner MODE** is a pair of Claude Code mods that turn every coding session into a lesson:
+**Programming Learner MODE** is a Claude Code mod that turns every coding session into a lesson:
 
 - **Claude Code Mentor**:
   - watches the exact edits Claude makes in your project and explains the mechanisms behind them in a side panel,
+  - shows every change Claude makes with the exact code before and after (taken from the tool result, never reconstructed), runs both versions on the same input and explains the difference, and can suggest a different approach that you hand back to Claude yourself,
   - includes a step-by-step execution simulator for JavaScript/TypeScript and Dart with an event loop, call stack, operator what-ifs and variant comparison,
   - understands Flutter projects: widgets, state, layout, navigation, state management, async UI, plus a widget-tree view of your `build()` methods,
   - quizzes you on your own code,
   - tracks evidence-based mastery of 89 programming concepts in a local SQLite database, with spaced repetition.
-- **Context Bar** shows the context window as a colored bar above the prompt, with per-category tooltips and a prompt-cache countdown.
+  - draws the context window as a colored bar above the prompt, with per-category tooltips and a prompt-cache countdown.
 
 Works on Windows and macOS (Claude Desktop) and on Linux (Claude Code CLI). The UI and lessons are in Polish. Everything stays on your machine. MIT licensed.
 

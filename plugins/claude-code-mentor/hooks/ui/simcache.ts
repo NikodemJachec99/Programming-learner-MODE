@@ -4,6 +4,7 @@
 import { simulate } from '../sim/interp'
 import type { SimResult } from '../sim/interp'
 import { dartToJs } from '../sim/dart'
+import { healBraces, healJs } from '../sim/heal'
 import { findSites } from '../sim/variants'
 import type { OpSite, ValueSite } from '../sim/variants'
 
@@ -15,7 +16,15 @@ export function simulateCached(source: string, dialect: Dialect = 'js'): SimResu
   const key = `${dialect}\u0000${source}`
   const hit = cache.get(key)
   if (hit) return hit
-  const r = simulate(source, { maxSteps: 2000, dialect })
+  // wycinek z lekcji albo zaznaczenia: domknięte nawiasy, nieznane nazwy jako zaślepki
+  let healed: { source: string; notes: string[] } = { source, notes: [] }
+  if (dialect === 'js') healed = healJs(source)
+  else if (!dartToJs(source).ok) {
+    const b = healBraces(source)
+    if (dartToJs(b.source).ok) healed = b
+  }
+  const r = simulate(healed.source, { maxSteps: 2000, dialect, stubs: true })
+  if (healed.notes.length) r.hypotheses.unshift(`Kod to wycinek, więc symulator go uzupełnił: ${healed.notes.join(', ')}. Dopiski widać w kodzie powyżej.`)
   cache.set(key, r)
   if (cache.size > 24) cache.delete(cache.keys().next().value as string)
   return r

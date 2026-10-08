@@ -1,7 +1,16 @@
 // Typy danych Claude Code Mentor (stan UI sesji i rekordy z bazy).
 // Trwała kopia: baza SQLite w %LOCALAPPDATA%\ClaudeCodeMentor.
 
-export type MentorTab = 'now' | 'lesson' | 'sim' | 'practice' | 'knowledge' | 'path' | 'settings'
+/** Test poziomu na start. `none` = jeszcze nie zrobiony i nie pominięty. */
+export interface MentorPlacement {
+  status: 'none' | 'running' | 'done' | 'skipped'
+  index: number
+  answers: (number | null)[]
+  /** Ostatnio kliknięta odpowiedź i czy była dobra, do krótkiej informacji pod pytaniem. */
+  last: { index: number; correct: boolean } | null
+}
+
+export type MentorTab = 'changes' | 'now' | 'lesson' | 'sim' | 'practice' | 'knowledge' | 'path' | 'settings'
 
 export type MentorLevelPref = 'beginner' | 'intermediate' | 'advanced' | 'adaptive'
 export type MentorDetail = 'short' | 'normal' | 'deep'
@@ -24,9 +33,17 @@ export type MentorSettings = {
   model: MentorModel
   sendCode: MentorSendCode
   maxSnippetLines: number
+  /** Change Lab: zapisuj kod przed i po zmianie (lokalnie, z limitem). */
+  saveChanges: boolean
+  /** Pasek kontekstu nad promptem (kategorie okna, procent, licznik cache). */
+  contextBar: boolean
+  /** Czas życia cache promptu w minutach: 5 albo 60. */
+  cacheTtl: number
 }
 
 export type MentorBoot = {
+  /** Wersja zainstalowana w Claude Code (installed_plugins.json); null, gdy nieznana. */
+  installedVersion?: string | null
   status: 'starting' | 'ready' | 'degraded'
   messages: string[]
   dataDir: string
@@ -104,7 +121,9 @@ export type MentorLessonBody = {
   taskContext: string | null
 }
 
-export type MentorLesson = MentorLessonMeta & { body: MentorLessonBody; model: string | null }
+export type MentorLessonFollowUp = { kind: 'under' | 'example'; title: string; status: 'loading' | 'ready'; text: string; note?: string }
+
+export type MentorLesson = MentorLessonMeta & { body: MentorLessonBody; model: string | null; followUps?: MentorLessonFollowUp[] }
 
 export type MentorJob = { state: 'idle' | 'queued' | 'working' | 'error'; message: string; at: number }
 
@@ -168,6 +187,10 @@ export type MentorQuizState = {
   otherExample: string
   followUp: string
   levelChange: string | null
+  /** Podpowiedzi pokazane do tej pory (stopniowo). */
+  hints?: string[]
+  /** Odpowiedź odsłonięta bez odpowiadania: bez wpływu na poziom. */
+  revealed?: boolean
 }
 
 export type MentorSimState = {
@@ -179,7 +202,7 @@ export type MentorSimState = {
   edits: { siteId: string; start: number; end: number; text: string; before: string; line: number }[]
   variant: 'A' | 'B'
   cursor: number
-  panel: 'state' | 'explain' | 'why' | 'compare'
+  panel: 'state' | 'explain' | 'why' | 'compare' | 'whatif'
   sqlSetup: string
   sqlQuery: string
   sqlResult: string | null
@@ -188,6 +211,47 @@ export type MentorSimState = {
   condLeft: string
   condRight: string
   callArgs: string
+  /** Change Lab: prawdziwa para przed (A) i po (B) zamiast ręcznych podmian. */
+  pair?: MentorSimPair | null
+}
+
+export type MentorSimPair = {
+  a: string
+  b: string
+  aStart: number
+  bStart: number
+  aLabel: string
+  bLabel: string
+  /** Podpowiedź wywołania, np. isAdult(…). */
+  hint?: string
+}
+
+export type MentorAlternative = {
+  title: string
+  idea: string
+  code: string
+  pros: string[]
+  cons: string[]
+  when: string
+}
+
+export type MentorLab = {
+  /** Wybrana zmiana albo null (lista). */
+  selected: string | null
+  view: 'diff' | 'before' | 'after'
+  loading: boolean
+  error: string | null
+  showAll: boolean
+  alt: { status: 'idle' | 'loading' | 'ready' | 'error'; forId: string | null; items: MentorAlternative[]; message: string }
+  /** Indeks alternatywy czekającej na potwierdzenie przekazania do Claude. */
+  confirm: number | null
+  handed: string | null
+  /** Tryb „Zgadnij zmianę”: kod przed, podpowiedzi, odsłonięcie zmiany. */
+  guess: { id: string; hints: string[]; revealed: boolean } | null
+  /** Zmiana, dla której pokazujemy wyjaśnienie na miejscu, i od kiedy. */
+  lessonFor?: string | null
+  lessonId?: string | null
+  lessonAt?: number
 }
 
 export type MentorUsage = {

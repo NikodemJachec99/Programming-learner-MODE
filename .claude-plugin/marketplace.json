@@ -5,23 +5,16 @@
     "url": "https://github.com/NikodemJachec99"
   },
   "metadata": {
-    "description": "Programming Learner MODE: mody do Claude Code, które uczą programowania na Twoim własnym kodzie.",
-    "version": "1.2.0"
+    "description": "Programming Learner MODE: Claude Code Mentor, mod, który uczy programowania na Twoim własnym kodzie.",
+    "version": "1.3.0"
   },
   "plugins": [
     {
       "name": "claude-code-mentor",
       "source": "./plugins/claude-code-mentor",
-      "description": "Nauczyciel programowania: lekcje z prawdziwych zmian (także Dart i Flutter), symulator wykonania, ćwiczenia, model wiedzy w SQLite.",
-      "version": "1.2.0",
+      "description": "Nauczyciel programowania: Change Lab (kod przed i po każdej zmianie Claude, uruchomienie obu wersji), lekcje, symulator, ćwiczenia, model wiedzy w SQLite.",
+      "version": "1.3.0",
       "category": "education"
-    },
-    {
-      "name": "context-bar",
-      "source": "./plugins/context-bar",
-      "description": "Pasek kontekstu nad promptem z dymkami kategorii i licznikiem cache promptu.",
-      "version": "1.0.0",
-      "category": "productivity"
     }
   ]
 }

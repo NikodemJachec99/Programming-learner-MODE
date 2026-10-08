@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Instaluje Programming Learner MODE (Claude Code Mentor + context-bar) globalnie, w user scope.
+  Instaluje Programming Learner MODE (Claude Code Mentor) globalnie, w user scope.
 
 .DESCRIPTION
   1. Sprawdza Claude Code CLI i Node.js 22.5+ (wbudowany node:sqlite).
@@ -12,18 +12,14 @@
 .PARAMETER FromGitHub
   Rejestruje marketplace z GitHuba (NikodemJachec99/Programming-learner-MODE) zamiast lokalnego klonu.
 
-.PARAMETER SkipContextBar
-  Instaluje tylko Claude Code Mentor.
-
 .EXAMPLE
   pwsh -File scripts\install.ps1
 .EXAMPLE
-  pwsh -File scripts\install.ps1 -FromGitHub -SkipContextBar
+  pwsh -File scripts\install.ps1 -FromGitHub
 #>
 [CmdletBinding()]
 param(
-  [switch]$FromGitHub,
-  [switch]$SkipContextBar
+  [switch]$FromGitHub
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,7 +28,7 @@ $MentorDir = Join-Path $Root 'plugins\claude-code-mentor'
 $DataDir = Join-Path $env:LOCALAPPDATA 'ClaudeCodeMentor'
 $Market = 'programming-learner-mode'
 $Repo = 'NikodemJachec99/Programming-learner-MODE'
-$Plugins = @('claude-code-mentor') + $(if ($SkipContextBar) { @() } else { @('context-bar') })
+$Plugins = @('claude-code-mentor')
 
 function Step($t) { Write-Host "`n== $t" -ForegroundColor Cyan }
 function Ok($t) { Write-Host "   OK  $t" -ForegroundColor Green }
@@ -88,6 +84,8 @@ if ($markets -notmatch [regex]::Escape($Market)) {
 
 Step 'Instalacja (user scope)'
 $list = (& claude plugin list 2>&1) -join "`n"
+# pasek kontekstu jest teraz częścią Mentora: stary osobny plugin zdejmujemy
+if ($list -match [regex]::Escape("context-bar@$Market")) { & claude plugin uninstall "context-bar@$Market" --scope user | Out-Host; Ok 'Usunięty stary context-bar (pasek jest teraz w Mentorze)' }
 foreach ($p in $Plugins) {
   $id = "$p@$Market"
   if ($list -match [regex]::Escape($id)) { & claude plugin update $id --scope user | Out-Host }

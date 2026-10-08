@@ -5,6 +5,7 @@
 
 import type { Host } from './host'
 import type {
+  MentorAlternative,
   MentorKnowledgeRow,
   MentorLesson,
   MentorLessonBody,
@@ -18,6 +19,8 @@ import type {
 import { CONCEPTS } from './content/concepts'
 import type { ConceptDef } from './content/types'
 import { Breaker, COST_PROFILES, estimateTokens, MANUAL_LIMIT, MIN_GAP_MS, today } from './engine/budget'
+import { BASIC_CONCEPTS, applyHunks, changedRanges, describeChange, simDialect, windowFor } from './engine/change'
+import type { ChangeFull, ChangeMeta } from './engine/change'
 import { classifyCommand, detectConcepts, isConfigFile, newSymbols } from './engine/detect'
 import { factsFromContent, factsFromPatch, langOf } from './engine/diff'
 import type { ChangeFacts, Hunk } from './engine/diff'
@@ -25,6 +28,8 @@ import { depthMap, missingPrereqs } from './engine/graph'
 import { hash, makeId } from './engine/hash'
 import { builtinLesson, extractJson, lessonRequest, levelName, mergeModelLesson } from './engine/lessons'
 import type { LessonInput } from './engine/lessons'
+import { changeQuestion } from './engine/changequiz'
+import { PLACEMENT } from './engine/placement'
 import { boundaryQuestion, fromTemplate, gradeChoice, gradeRequest, parseGrade, parseQuiz, predictOutputQuestion, quizRequest } from './engine/quiz'
 import type { Built, Grade } from './engine/quiz'
 import { isSensitivePath, redact, safeSnippet } from './engine/redact'
@@ -34,11 +39,22 @@ import { DEFAULT_SETTINGS, S } from './ui/state'
 
 
 type Detail = { snippet: string; start: number; lang: string; unified: string; facts: ChangeFacts | null }
-type Job = { id: string; kind: 'auto' | 'manual'; conceptId: string; obsId: string; deep: boolean; task: string | null; note: string | null; at: number }
+type Job = { id: string; kind: 'auto' | 'manual'; conceptId: string; obsId: string; deep: boolean; task: string | null; note: string | null; at: number; obs?: MentorObservation; inline?: boolean }
 
 const BY_ID = new Map<string, ConceptDef>(CONCEPTS.map(c => [c.id, c]))
 const DEPTH = depthMap(CONCEPTS)
 export const conceptById = (id: string): ConceptDef | undefined => BY_ID.get(id)
+
+
+/**
+ * Pojęcia warte uwagi w zmianie: bez podstaw i bez tego, co już opanowane (poziom 3+),
+ * najbardziej zaawansowane najpierw. Gdy nic nie zostaje, oddaje pierwsze z listy.
+ */
+export function interestingConcepts(ids: readonly string[], levels: Record<string, number>): string[] {
+  const known = [...new Set(ids)].filter(id => BY_ID.has(id))
+  const picked = known.filter(id => !BASIC_CONCEPTS.has(id) && (levels[id] ?? 0) < 3).sort((a, b) => (DEPTH.get(b) ?? 0) - (DEPTH.get(a) ?? 0))
+  return picked.length ? picked : known.slice(0, 1)
+}
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const norm = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
@@ -61,6 +77,23 @@ type KnowledgeDb = {
 type MisDb = { concept_id: string; key: string; description: string | null; count: number; resolved_at: number | null; last_seen: number }
 type LessonDb = { id: string; title: string; ts: number; concept_ids?: string[]; file_path: string | null; line: number | null; source: 'model' | 'builtin'; status: string; body?: MentorLessonBody; model?: string | null }
 
+/**
+ * Wywołanie dla symulacji przed/po: gdy funkcja ma jeden parametr, a zmieniona linia
+ * zawiera liczbę, wywołujemy ją z tą liczbą (to zwykle przypadek brzegowy zmiany).
+ */
+export function suggestCall(code: string, unified: string, dialect: 'js' | 'dart'): { call: string; hint: string } {
+  const fn = /\bfunction\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\(([^)]*)\)|\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(([^)]*)\)[^=\n]*=>|^\s*(?:Future<[^>]*>|void|int|double|String|bool|num|[A-Z]\w*)\s+([a-z_]\w*)\s*\(([^)]*)\)\s*(?:async\s*)?[{=]/m.exec(code)
+  const name = fn?.[1] ?? fn?.[3] ?? fn?.[5]
+  if (!name) return { call: '', hint: '' }
+  const params = (fn?.[2] ?? fn?.[4] ?? fn?.[6] ?? '').split(',').filter(x => x.trim()).length
+  const changed = unified.split('\n').find(l => l.startsWith('+') && !l.startsWith('+++')) ?? ''
+  const num = /(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])/.exec(changed.slice(1))?.[0]
+  const print = dialect === 'dart' ? 'print' : 'console.log'
+  if (params === 1 && num !== undefined) return { call: `${print}(${name}(${num}))`, hint: `${name}(${num})` }
+  if (params === 0) return { call: `${print}(${name}())`, hint: `${name}()` }
+  return { call: '', hint: `${name}(…)` }
+}
+
 export class Mentor {
   ctx: DbCtx | null = null
   projectId = ''
@@ -69,6 +102,9 @@ export class Mentor {
   surface: string | null = null
   turn = 0
   private taskContext: string | null = null
+  private turnLabel: string | null = null
+  private lastChange: ChangeFull | null = null
+  private changeCache = new Map<string, ChangeFull>()
   private turnObs: MentorObservation[] = []
   private details = new Map<string, Detail>()
   private projectConcepts: Record<string, number> = {}
@@ -95,6 +131,8 @@ export class Mentor {
     this.projectId = 'p_' + hash(norm(root))
     const name = root.split(/[\\/]/).filter(Boolean).pop() ?? root
     const dataDir = (await io.dataDir()) ?? ''
+    void this.checkVersion(io)
+    void this.loadPlacement(io)
     const posix = dataDir.startsWith('/')
     const engine = await io.version().catch(() => '?')
     // Kandydaci na node.exe: z instalatora (prawdziwa ścieżka przed linkami nvm),
@@ -160,6 +198,7 @@ export class Mentor {
           },
         },
         { op: 'maybeDailyBackup', args: { now } },
+        { op: 'getChanges', args: { projectId: this.projectId, limit: 120 } },
       ])
       const init = res[0]
       const boot = res[1]
@@ -177,6 +216,11 @@ export class Mentor {
       await io.set(S.settings, () => this.settings)
       await this.applyKnowledge(io, v.knowledge, v.misconceptions)
       await io.set(S.lessons, () => v.recentLessons.map(toMeta))
+      const hist = res[3]
+      if (hist?.ok && Array.isArray(hist.value)) {
+        const saved = hist.value as ChangeMeta[]
+        await io.set(S.changes, live => [...live, ...saved.filter(x => !live.some(y => y.id === x.id))].slice(0, 120))
+      }
       await this.applyUsage(io, v.usageToday)
       const schema = (init.value as { schemaVersion: number }).schemaVersion
       await io.set(S.boot, b => ({ ...b, status: 'ready' as const, schemaVersion: schema, messages }))
@@ -260,6 +304,8 @@ export class Mentor {
     this.turn++
     const r = redact(text)
     this.taskContext = r.text.trim().slice(0, 1500) || null
+    const first = r.text.trim().split(/\r?\n/)[0] ?? ''
+    this.turnLabel = first ? (first.length > 90 ? first.slice(0, 89) + '…' : first) : null
   }
 
   /** Po wykonaniu narzędzia. Nie zmienia wyniku; błędy połyka. */
@@ -269,6 +315,9 @@ export class Mentor {
     let obs: MentorObservation | null = null
     if (tool === 'Edit' || tool === 'Write' || tool === 'NotebookEdit') obs = this.observeEdit(tool, input, ran, now)
     else if (tool === 'Bash') obs = this.observeBash(input, ran, now)
+    const change = this.lastChange
+    this.lastChange = null
+    if (change) await this.addChange(io, change)
     if (!obs) return
     this.turnObs.push(obs)
     if (obs.file) this.touchedSince.add(norm(obs.file))
@@ -291,6 +340,7 @@ export class Mentor {
     }
     const result = (ran.result ?? {}) as { type?: string; structuredPatch?: Hunk[]; content?: string; staged?: boolean; originalFile?: string | null }
     if (ran.deny !== undefined || ran.isError || result.staged) {
+      this.lastChange = this.changeShell(base, 'failed', now)
       return { ...base, failed: true, summary: ran.deny ? `Operacja odrzucona: ${ran.deny.slice(0, 160)}` : result.staged ? 'Zmiana wstrzymana do przeglądu, plik bez zmian' : `Edycja nie powiodła się: ${(ran.text ?? '').slice(0, 160)}` }
     }
     let facts: ChangeFacts | null = null
@@ -299,6 +349,7 @@ export class Mentor {
     else if (tool === 'NotebookEdit') facts = factsFromContent(String(input.new_source ?? ''), this.settings.maxSnippetLines)
     const kind: MentorObservation['kind'] = tool === 'Write' && result.type === 'create' ? 'create' : isConfigFile(path) ? 'config' : 'edit'
     if (isSensitivePath(path)) {
+      this.lastChange = { ...this.changeShell({ ...base, kind }, 'blocked', now), summary: 'Plik wrażliwy: kod nie jest zapisywany ani analizowany' }
       return { ...base, kind, blocked: true, added: facts?.added ?? 0, removed: facts?.removed ?? 0, summary: 'Plik wrażliwy: treść nie jest analizowana ani zapisywana' }
     }
     if (!facts) return { ...base, kind, summary: 'Zmiana bez szczegółów diffu' }
@@ -322,7 +373,197 @@ export class Mentor {
     const snip = safeSnippet(path, facts.snippet.text, this.settings.maxSnippetLines)
     const unified = redact(facts.unified).text
     this.details.set(id, { snippet: snip.text, start: facts.snippet.start, lang: base.lang, unified, facts })
-    return { ...base, kind: k2, line, added: facts.added, removed: facts.removed, concepts: hits.map(x => x.id), symbols, summary }
+    const obsOut: MentorObservation = { ...base, kind: k2, line, added: facts.added, removed: facts.removed, concepts: hits.map(x => x.id), symbols, summary }
+    this.lastChange = this.captureChange(obsOut, tool, input, result, facts, unified, now)
+    return obsOut
+  }
+
+  /** Czy w Claude Code jest już nowsza wersja niż ta, na której działa sesja. */
+  async checkVersion(io: Host): Promise<void> {
+    const v = await io.installedVersion().catch(() => null)
+    await io.set(S.boot, b => ({ ...b, installedVersion: v }))
+  }
+
+  // ===================== Change Lab =====================
+
+  private changeShell(o: MentorObservation, status: 'failed' | 'blocked', now: number): ChangeFull {
+    return {
+      id: makeId('c', now), ts: now, turnKey: `${this.sessionId}:${this.turn}`, turnLabel: this.turnLabel, tool: o.tool,
+      kind: o.kind === 'create' ? 'create' : 'edit', status, file: o.file ?? '', lang: o.lang, line: null, added: o.added, removed: o.removed,
+      summary: status === 'failed' ? 'Zmiana nie weszła do pliku (odrzucona albo błąd narzędzia)' : '', concepts: [], facts: [], hasBefore: false, hasAfter: false,
+      unified: '', before: null, beforeStart: 1, after: null, afterStart: 1,
+    }
+  }
+
+  /**
+   * Rekord zmiany z wyniku narzędzia: "przed" to originalFile, "po" to ten plik z nałożonym
+   * patchem (albo treść Write). Gdy patch się nie nakłada, "po" zostaje puste zamiast zgadywane.
+   */
+  private captureChange(o: MentorObservation, tool: string, input: Record<string, unknown>, result: { type?: string; structuredPatch?: Hunk[]; content?: string; originalFile?: string | null }, facts: ChangeFacts, unified: string, now: number): ChangeFull {
+    const isCreate = o.kind === 'create'
+    const original = typeof result.originalFile === 'string' ? result.originalFile : null
+    const hunks = result.structuredPatch ?? []
+    let afterFull: string | null = null
+    if (tool === 'Write') afterFull = String(input.content ?? result.content ?? '')
+    else if (original !== null && hunks.length) afterFull = applyHunks(original, hunks)
+    const ranges = changedRanges(hunks)
+    let before: { text: string; start: number } | null = null
+    let after: { text: string; start: number } | null = null
+    if (!isCreate && original !== null && ranges) before = windowFor(original, ranges.old[0], ranges.old[1])
+    if (afterFull !== null) {
+      if (isCreate) after = { text: afterFull.split(/\r?\n/).slice(0, 200).join('\n'), start: 1 }
+      else if (ranges) after = windowFor(afterFull, ranges.new[0], ranges.new[1])
+    }
+    const keep = this.settings.saveChanges !== false
+    const shortName = (id: string) => BY_ID.get(id)?.name.replace(/\s*\(.*\)$/, '') ?? null
+    return {
+      id: makeId('c', now), ts: now, turnKey: `${this.sessionId}:${this.turn}`, turnLabel: this.turnLabel, tool,
+      kind: o.kind === 'create' ? 'create' : o.kind === 'config' ? 'config' : o.kind === 'dependency' ? 'dependency' : 'edit',
+      status: 'ok', file: o.file ?? '', lang: o.lang, line: o.line, added: o.added, removed: o.removed, summary: o.summary,
+      concepts: o.concepts, facts: describeChange(facts.removedLines, facts.addedLines, o.lang, shortName, isCreate),
+      hasBefore: keep && !!before, hasAfter: keep && !!after,
+      unified: keep ? unified : '', before: keep && before ? redact(before.text).text : null, beforeStart: before?.start ?? 1,
+      after: keep && after ? redact(after.text).text : null, afterStart: after?.start ?? 1,
+    }
+  }
+
+  private async addChange(io: Host, c: ChangeFull): Promise<void> {
+    this.changeCache.set(c.id, c)
+    const meta: ChangeMeta = { ...c }
+    delete (meta as Partial<ChangeFull>).before
+    delete (meta as Partial<ChangeFull>).after
+    delete (meta as Partial<ChangeFull>).unified
+    await io.set(S.changes, list => [meta, ...list.filter(x => x.id !== c.id)].slice(0, 120))
+    // zapis w tle: nie opóźnia wyniku narzędzia
+    void write(io, this.ctx, [{ op: 'saveChange', args: { change: { ...c, sessionId: this.sessionId, projectId: this.projectId } } }]).catch(() => undefined)
+  }
+
+  getChange(id: string): ChangeFull | null {
+    return this.changeCache.get(id) ?? null
+  }
+
+  async openChange(io: Host, id: string): Promise<void> {
+    await io.set(S.lab, l => ({ ...l, selected: id, view: 'diff' as const, error: null, confirm: null, handed: null, guess: null, alt: l.alt.forId === id ? l.alt : { status: 'idle' as const, forId: null, items: [], message: '' } }))
+    await io.set(S.tab, () => 'changes' as MentorTab)
+    if (this.changeCache.has(id)) return
+    if (!this.ctx) {
+      await io.set(S.lab, l => ({ ...l, error: 'Baza jeszcze startuje. Spróbuj za chwilę.' }))
+      return
+    }
+    await io.set(S.lab, l => ({ ...l, loading: true }))
+    try {
+      const full = await one<ChangeFull | null>(io, this.ctx, 'getChange', { id })
+      if (full) this.changeCache.set(id, { ...full, before: full.before ?? null, after: full.after ?? null, unified: full.unified ?? '' })
+      else await io.set(S.lab, l => ({ ...l, error: 'Tej zmiany nie ma już w historii (limit 400 zmian albo 60 dni).' }))
+    } catch (e) {
+      await io.set(S.lab, l => ({ ...l, error: `Nie udało się wczytać zmiany: ${errText(e)}` }))
+    } finally {
+      await io.set(S.lab, l => ({ ...l, loading: false }))
+    }
+  }
+
+  /** Symulacja przed (A) i po (B) na tych samych danych. Nic nie zapisuje do plików. */
+  async runChange(io: Host, id: string): Promise<void> {
+    const c = this.changeCache.get(id)
+    if (!c?.after) return
+    const dialect = simDialect(c.lang) ?? 'js'
+    const call = suggestCall(c.after, c.unified, dialect)
+    const pair = c.before ? { a: c.before, b: c.after, aStart: c.beforeStart, bStart: c.afterStart, aLabel: 'przed', bLabel: 'po', hint: call.hint } : null
+    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: c.after!, origin: `${c.file}${c.line ? `:${c.line}` : ''}`, pair, edits: [], cursor: 0, variant: (pair ? 'B' : 'A') as 'A' | 'B', panel: 'state' as const, callArgs: call.call }))
+    await io.set(S.tab, () => 'sim' as MentorTab)
+  }
+
+  /** Wyjaśnienie zmiany na miejscu, w jej szczegółach, zawsze na kodzie tej zmiany. */
+  async lessonForChange(io: Host, id: string): Promise<void> {
+    const c = this.changeCache.get(id)
+    if (!c) return
+    // drugie kliknięcie chowa wyjaśnienie
+    if ((await io.get(S.lab)).lessonFor === id) return void (await io.set(S.lab, l => ({ ...l, lessonFor: null, lessonId: null })))
+    const levels = Object.fromEntries((await io.get(S.knowledge)).map(k => [k.id, k.level]))
+    const concept = interestingConcepts(c.concepts, levels)[0]
+    if (!concept) return
+    const now = await io.now()
+    const obsId = `chg-${id}`
+    // kod tej zmiany jako źródło lekcji: działa też po przeładowaniu i dla zmian z historii
+    this.details.set(obsId, { snippet: c.after ?? '', start: c.afterStart, lang: c.lang, unified: c.unified, facts: null })
+    const obs: MentorObservation = {
+      id: obsId, ts: c.ts, turn: this.turn, kind: c.kind === 'create' ? 'create' : 'edit', tool: c.tool, file: c.file, line: c.line, summary: c.summary,
+      added: c.added, removed: c.removed, lang: c.lang, concepts: c.concepts, symbols: [], failed: false, blocked: false, preexisting: false,
+    }
+    this.enqueue({ id: makeId('j', now), kind: 'manual', conceptId: concept, obsId, deep: false, task: c.turnLabel, note: null, at: now, obs, inline: true })
+    this.taught.delete(concept)
+    await io.set(S.lab, l => ({ ...l, lessonFor: id, lessonId: null, lessonAt: now }))
+    await io.set(S.job, () => ({ state: 'queued' as const, message: `Piszę wyjaśnienie: ${BY_ID.get(concept)!.name}.`, at: now }))
+    void this.tick(io)
+  }
+
+  /**
+   * „Sprawdź się” w zmianie: najpierw pytanie z pary przed/po (wynik liczy symulator),
+   * gdy się nie da, zgadywanie zmiany po kodzie przed, a na końcu zwykłe ćwiczenie z pojęcia.
+   */
+  async quizForChange(io: Host, id: string): Promise<void> {
+    const c = this.changeCache.get(id)
+    if (!c) return
+    const levels = Object.fromEntries((await io.get(S.knowledge)).map(k => [k.id, k.level]))
+    const concept = interestingConcepts(c.concepts, levels)[0] ?? 'functions'
+    const now = await io.now()
+    const built = changeQuestion(makeId('q', now), c, concept)
+    if (built) return void (await this.presentQuiz(io, built, true))
+    if (c.before && c.unified) return void (await io.set(S.lab, l => ({ ...l, guess: { id, hints: [], revealed: false } })))
+    await this.startQuiz(io, 'concept', concept)
+  }
+
+  async requestAlternatives(io: Host, id: string): Promise<void> {
+    const c = this.changeCache.get(id)
+    if (!c) return
+    const fail = (message: string) => io.set(S.lab, l => ({ ...l, alt: { status: 'error' as const, forId: id, items: [], message } }))
+    if (this.settings.cost === 'off') return void (await fail('Lekcje AI są wyłączone (Ustawienia, koszty). Inne podejście potrzebuje modelu.'))
+    if (this.settings.sendCode === 'off') return void (await fail('Masz ustawione „nie wysyłaj kodu”, a bez kodu model nie zaproponuje innego podejścia.'))
+    if (!c.after) return void (await fail('Ta zmiana nie ma zapisanego kodu.'))
+    await io.set(S.lab, l => ({ ...l, confirm: null, handed: null, alt: { status: 'loading' as const, forId: id, items: [], message: '' } }))
+    const now = await io.now()
+    const system = 'Jesteś mentorem programowania. Odpowiadasz wyłącznie poprawnym JSON. Teksty po polsku, proste zdania, bez myślników jako interpunkcji.'
+    const prompt = [
+      `Plik: ${c.file} (język: ${c.lang}).`,
+      `Polecenie, po którym Claude zmienił kod: ${c.turnLabel ?? 'nieznane'}.`,
+      c.before ? `Kod przed zmianą:\n\`\`\`\n${c.before.slice(0, 3000)}\n\`\`\`` : 'Plik powstał w tej zmianie.',
+      `Kod po zmianie:\n\`\`\`\n${c.after.slice(0, 6000)}\n\`\`\``,
+      'Zaproponuj do 2 naprawdę innych sposobów osiągnięcia tego samego celu: inne podejście, a nie kosmetykę ani zmianę nazw. Każdy musi zachować to samo działanie. Gdy obecne rozwiązanie jest jedynym sensownym, zwróć pustą listę.',
+      'Nie podawaj wyników pomiarów ani twierdzeń o szybkości bez uzasadnienia w kodzie.',
+      'Format: {"alternatives":[{"title":"krótka nazwa podejścia","idea":"1-2 zdania, jak działa","code":"kod w tym samym języku, do 30 linii","pros":["zaleta"],"cons":["wada"],"when":"kiedy to wybrać"}]}',
+    ].join('\n\n')
+    const text = await this.callModel(io, 'manual', system, prompt, 2500, now).catch(() => null)
+    if (!text) return void (await fail('Model jest niedostępny albo wyczerpał się dzienny limit. Spróbuj później.'))
+    const j = extractJson(text)
+    const raw = Array.isArray(j?.alternatives) ? (j!.alternatives as unknown[]) : null
+    if (!raw) return void (await fail('Model zwrócił odpowiedź w złym formacie. Spróbuj jeszcze raz.'))
+    const strs = (v: unknown) => (Array.isArray(v) ? v.map(String).filter(Boolean).slice(0, 4) : [])
+    const items: MentorAlternative[] = raw
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+      .map(x => ({ title: String(x.title ?? '').slice(0, 80), idea: String(x.idea ?? '').slice(0, 400), code: redact(String(x.code ?? '')).text.split('\n').slice(0, 40).join('\n'), pros: strs(x.pros), cons: strs(x.cons), when: String(x.when ?? '').slice(0, 300) }))
+      .filter(x => x.title && x.code.trim())
+      .slice(0, 2)
+    await io.set(S.lab, l => ({ ...l, alt: { status: 'ready' as const, forId: id, items, message: items.length ? '' : 'Model uznał, że obecne rozwiązanie jest tu najprostsze i nie ma sensownej alternatywy.' } }))
+  }
+
+  /** Porównanie obecnego kodu z alternatywą w symulatorze (A = obecne, B = alternatywa). */
+  async compareAlternative(io: Host, id: string, index: number): Promise<void> {
+    const c = this.changeCache.get(id)
+    const alt = (await io.get(S.lab)).alt.items[index]
+    if (!c?.after || !alt) return
+    const dialect = simDialect(c.lang) ?? 'js'
+    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: alt.code, origin: `${c.file}: ${alt.title}`, pair: { a: c.after!, b: alt.code, aStart: c.afterStart, bStart: 1, aLabel: 'obecne', bLabel: 'alternatywa', hint: '' }, edits: [], cursor: 0, variant: 'B' as const, panel: 'state' as const, callArgs: '' }))
+    await io.set(S.tab, () => 'sim' as MentorTab)
+  }
+
+  /** Wkłada prośbę do pola wiadomości. Claude dostaje ją dopiero, gdy użytkownik wyśle Enterem. */
+  async handOff(io: Host, id: string, index: number): Promise<void> {
+    const c = this.changeCache.get(id)
+    const alt = (await io.get(S.lab)).alt.items[index]
+    if (!c || !alt) return
+    const text = `W ${c.file}${c.line ? ` (okolice linii ${c.line})` : ''} zmień rozwiązanie na podejście: ${alt.title}. ${alt.idea} Zachowaj obecne działanie i uruchom testy, jeśli są.`
+    const ok = await io.fillPrompt(text).catch(() => false)
+    await io.set(S.lab, l => ({ ...l, confirm: null, handed: ok ? 'Prośba czeka w polu wiadomości. Popraw ją albo wyślij Enterem.' : `Nie mogę wpisać do pola wiadomości. Skopiuj i wyślij sam: ${text}` }))
   }
 
   private observeBash(input: Record<string, unknown>, ran: { isError?: true; deny?: string; text?: string }, now: number): MentorObservation | null {
@@ -477,7 +718,7 @@ export class Mentor {
   private async runLessonJob(io: Host, job: Job, now: number): Promise<void> {
     const c = BY_ID.get(job.conceptId)
     if (!c) return
-    const obs = (await this.findObs(io, job.obsId)) ?? {
+    const obs = (await this.findObs(io, job.obsId)) ?? job.obs ?? {
       id: job.obsId, ts: now, turn: this.turn, kind: 'edit' as const, tool: '—', file: null, line: null, summary: 'Lekcja na żądanie', added: 0, removed: 0, lang: 'text',
       concepts: [c.id], symbols: [], failed: false, blocked: false, preexisting: false,
     }
@@ -583,10 +824,11 @@ export class Mentor {
     const tab = await io.get(S.tab)
     const current = await io.get(S.lesson)
     if (job.kind === 'manual' || tab !== 'lesson' || !current) await io.set(S.lesson, () => lesson)
-    await io.set(S.unseen, n => n + 1)
+    if (job.inline) await io.set(S.lab, l => ({ ...l, lessonId: lesson.id }))
+    else await io.set(S.unseen, n => n + 1)
     await io.set(S.job, () => ({ state: 'idle' as const, message: `Gotowe: ${lesson.title} (${source === 'model' ? `AI: ${modelName}` : 'wbudowana'})`, at: now }))
     if (!this.settings.focusMode && job.kind === 'auto') io.toast(`Mentor: nowa lekcja „${c.name}”`)
-    if (job.kind === 'manual') await io.set(S.tab, () => 'lesson' as MentorTab)
+    if (job.kind === 'manual' && !job.inline) await io.set(S.tab, () => 'lesson' as MentorTab)
     if (this.settings.autoQuiz && job.kind === 'auto' && !(await io.get(S.quiz))) {
       const built = this.deterministicQuiz(c, d, obs.file, now)
       if (built) await this.presentQuiz(io, built, false)
@@ -606,6 +848,49 @@ export class Mentor {
     await io.set(S.job, () => ({ state: 'queued' as const, message: `W kolejce: pogłębiona lekcja „${BY_ID.get(id)!.name}”.`, at: now }))
     void this.tick(io)
     return `Przygotowuję lekcję: ${BY_ID.get(id)!.name}`
+  }
+
+  /**
+   * Dopytanie pod lekcją: „co jest pod spodem” albo „inny przykład”. Dopisuje krótką odpowiedź
+   * pod lekcją zamiast ją podmieniać. Bez AI daje treść z biblioteki i mówi dlaczego.
+   */
+  async lessonFollowUp(io: Host, kind: 'under' | 'example'): Promise<void> {
+    const l = await io.get(S.lesson)
+    if (!l) return
+    const c = BY_ID.get(l.conceptIds[0] ?? '')
+    const title = kind === 'under' ? 'Co jest pod spodem' : 'Inny przykład'
+    const put = (f: { status: 'loading' | 'ready'; text: string; note?: string }) =>
+      io.set(S.lesson, x => (x && x.id === l.id ? { ...x, followUps: [...(x.followUps ?? []).filter(y => y.kind !== kind), { kind, title, ...f }] } : x))
+    await put({ status: 'loading', text: '' })
+    let why = ''
+    if (this.settings.cost === 'off') why = 'lekcje AI są wyłączone w Ustawieniach'
+    else if (!this.ctx) why = 'baza jeszcze startuje'
+    let text: string | null = null
+    if (!why) {
+      const now = await io.now()
+      const code = this.settings.sendCode === 'off' ? '' : redact(l.body.snippet ?? '').text.slice(0, 4000)
+      const name = c?.name ?? l.title
+      const system = 'Jesteś mentorem programowania dla początkującego. Piszesz po polsku, prostymi zdaniami, w Markdown, bez wstępu i bez podsumowania, bez myślników jako interpunkcji.'
+      const prompt =
+        kind === 'under'
+          ? `Pojęcie: ${name}.${code ? `
+Kod ucznia:
+\`\`\`
+${code}
+\`\`\`` : ''}
+Wyjaśnij, co dokładnie dzieje się pod spodem, gdy ten kod się wykonuje: kolejne kroki silnika albo środowiska, co jest w pamięci, na stosie i w kolejkach. Odnoś się do konkretnych linii kodu. 5 do 8 zdań albo krótka lista kroków.`
+          : `Pojęcie: ${name}.${code ? `
+Kod ucznia (NIE powtarzaj go):
+\`\`\`
+${code}
+\`\`\`` : ''}
+Pokaż inny, krótki przykład tego samego mechanizmu w innym kontekście (np. zakupy, szkoła, gra). Jeden blok kodu do 12 linii, potem 2 do 3 zdania: co pokazuje i czym różni się od kodu ucznia.`
+      text = await this.callModel(io, 'manual', system, prompt, 1100, now).catch(() => null)
+      if (!text) why = 'model jest niedostępny albo wyczerpał się dzienny limit'
+    }
+    if (text) return void (await put({ status: 'ready', text }))
+    const fallback = kind === 'under' ? (c?.mechanism ?? l.body.mechanism) : [c?.practice, c?.quiz.find(q => /```/.test(q.q))?.q].filter(Boolean).join(String.fromCharCode(10, 10))
+    await put({ status: 'ready', text: fallback || 'Brak treści w bibliotece dla tego pojęcia.', note: `Z biblioteki Mentora, bez AI: ${why}.` })
   }
 
   async openLesson(io: Host, id: string): Promise<void> {
@@ -657,7 +942,7 @@ export class Mentor {
         args: { exercise: { id: built.question.id, concept_id: built.question.conceptId, project_id: this.projectId, ts: now, kind: built.question.kind, question: { ...built.question, key: built.key } } },
       },
     ])
-    const state: MentorQuizState = { question: built.question, answer: '', status: 'asking' as const, verdict: null, feedback: '', misconceptions: [], otherExample: '', followUp: '', levelChange: null }
+    const state: MentorQuizState = { question: built.question, answer: '', status: 'asking' as const, verdict: null, feedback: '', misconceptions: [], otherExample: '', followUp: '', levelChange: null, hints: [], revealed: false }
     await io.set(S.quizKey, () => built.key)
     await io.set(S.quiz, () => state)
     if (switchTab) await io.set(S.tab, () => 'practice' as MentorTab)
@@ -734,6 +1019,40 @@ export class Mentor {
     return r.text
   }
 
+  /** Kolejna podpowiedź: najpierw naprowadzenie, potem odrzucenie części złych odpowiedzi. Bez modelu. */
+  async quizHint(io: Host): Promise<void> {
+    const q = await io.get(S.quiz)
+    const key = await io.get(S.quizKey)
+    if (!q || !key || q.status !== 'asking') return
+    const c = BY_ID.get(q.question.conceptId)
+    const hints = q.hints ?? []
+    const first = (t: string | undefined) => (t ?? '').replace(/\s+/g, ' ').split(/(?<=[.!?])\s/)[0] ?? ''
+    let next: string | null = null
+    if (hints.length === 0) next = c ? `Pomyśl o tym: ${first(c.intuition)}` : null
+    if (hints.length <= 1 && !next) {
+      const opts = q.question.options
+      if (opts && key.answer !== null) {
+        const wrong = opts.map((_, i) => i).filter(i => i !== key.answer)
+        const drop = wrong.slice(0, Math.max(1, Math.floor(wrong.length / 2) + (wrong.length > 2 ? 0 : 0)))
+        next = `To na pewno nie ${drop.map(i => 'ABCDE'[i]).join(' ani ')}.`
+      } else if (key.rubric) next = `Dobra odpowiedź mówi o tym: ${first(key.rubric)}`
+      else if (c?.pitfalls[0]) next = `Uważaj na: ${c.pitfalls[0]}`
+    }
+    if (!next) next = 'Więcej podpowiedzi nie ma. Możesz odsłonić odpowiedź.'
+    await io.set(S.quiz, x => (x ? { ...x, hints: [...(x.hints ?? []), next!] } : x))
+  }
+
+  /** Odsłania poprawną odpowiedź z wyjaśnieniem. Nie zmienia poziomu wiedzy. */
+  async quizReveal(io: Host): Promise<void> {
+    const q = await io.get(S.quiz)
+    const key = await io.get(S.quizKey)
+    if (!q || !key || q.status !== 'asking') return
+    const opts = q.question.options
+    const correct = opts && key.answer !== null ? `${'ABCDE'[key.answer]}. ${opts[key.answer]}` : (key.expected ?? '')
+    const feedback = [correct ? `**Poprawna odpowiedź:** ${correct}` : '', key.explain].filter(Boolean).join('\n\n')
+    await io.set(S.quiz, x => (x ? { ...x, status: 'graded' as const, verdict: null, revealed: true, feedback, misconceptions: [], otherExample: '', followUp: '', levelChange: null } : x))
+  }
+
   async answer(io: Host, pickedOrText: number | string): Promise<void> {
     const q = await io.get(S.quiz)
     const key = await io.get(S.quizKey)
@@ -761,6 +1080,9 @@ export class Mentor {
         await io.set(S.quiz, x => (x ? { ...x, status: 'pending' as const, feedback: 'Nie udało się ocenić odpowiedzi (model niedostępny, limit albo zły format). Odpowiedź NIE wpłynęła na Twój postęp. Spróbuj „Oceń ponownie”.' } : x))
         return
       }
+    }
+    if (q.hints?.length && grade.verdict === 'correct') {
+      grade = { ...grade, verdict: 'partial', feedback: `${grade.feedback}\n\nOdpowiedź z podpowiedzią liczy się jako częściowo poprawna.` }
     }
     const task = q.question.kind
     const evidence = [{ conceptId: q.question.conceptId, kind: grade.verdict, task, source: 'quiz', projectId: this.projectId, misconceptions: grade.misconceptions.map(m => ({ key: m.key, description: m.description, example: q.question.prompt.slice(0, 200) })) }]
@@ -802,6 +1124,56 @@ export class Mentor {
     if (!q || q.status !== 'pending') return
     await io.set(S.quiz, x => (x ? { ...x, status: 'asking' as const } : x))
     await this.answer(io, q.answer)
+  }
+
+  // ===================== test poziomu =====================
+
+  private async loadPlacement(io: Host): Promise<void> {
+    const saved = (await io.storeGet('placement').catch(() => null)) as { status?: string } | null
+    if (saved?.status === 'done' || saved?.status === 'skipped') await io.set(S.placement, p => ({ ...p, status: saved.status as 'done' | 'skipped' }))
+  }
+
+  async startPlacement(io: Host): Promise<void> {
+    await io.set(S.placement, () => ({ status: 'running' as const, index: 0, answers: [], last: null }))
+    await io.set(S.lab, l => ({ ...l, selected: null }))
+    await io.set(S.tab, () => 'changes' as MentorTab)
+  }
+
+  async skipPlacement(io: Host): Promise<void> {
+    await io.set(S.placement, () => ({ status: 'skipped' as const, index: 0, answers: [], last: null }))
+    await io.storeSet('placement', { status: 'skipped' }).catch(() => undefined)
+  }
+
+  /** Odpowiedź na pytanie testu. Po ostatnim zapisuje wynik: dobra odpowiedź = to pojęcie i jego podstawy znane. */
+  async answerPlacement(io: Host, option: number): Promise<void> {
+    const p = await io.get(S.placement)
+    const q = PLACEMENT[p.index]
+    if (p.status !== 'running' || !q) return
+    const answers = [...p.answers.slice(0, p.index), option]
+    const correct = option === q.answer
+    const last = p.index + 1 >= PLACEMENT.length
+    await io.set(S.placement, () => ({ status: last ? ('done' as const) : ('running' as const), index: p.index + 1, answers, last: { index: p.index, correct } }))
+    if (!last) return
+    await io.storeSet('placement', { status: 'done', answers }).catch(() => undefined)
+    const now = await io.now()
+    const known = new Set<string>()
+    const ops: Op[] = []
+    PLACEMENT.forEach((x, i) => {
+      if (answers[i] === x.answer) {
+        ops.push({ op: 'recordEvidence', args: { conceptId: x.conceptId, kind: 'correct', task: 'predict', source: 'user', projectId: this.projectId, now } })
+        const walk = (id: string) => {
+          for (const pre of BY_ID.get(id)?.prereqs ?? []) if (!known.has(pre)) (known.add(pre), walk(pre))
+        }
+        walk(x.conceptId)
+      }
+    })
+    const asked = new Set(PLACEMENT.map(x => x.conceptId))
+    for (const id of known) if (!asked.has(id)) ops.push({ op: 'recordEvidence', args: { conceptId: id, kind: 'self_report_known', source: 'user', projectId: this.projectId, now } })
+    PLACEMENT.forEach((x, i) => {
+      if (answers[i] !== x.answer && !known.has(x.conceptId)) ops.push({ op: 'recordEvidence', args: { conceptId: x.conceptId, kind: 'self_report_unknown', source: 'user', projectId: this.projectId, now } })
+    })
+    await write(io, this.ctx, ops)
+    await this.refreshKnowledge(io)
   }
 
   async selfReport(io: Host, conceptId: string, known: boolean): Promise<void> {

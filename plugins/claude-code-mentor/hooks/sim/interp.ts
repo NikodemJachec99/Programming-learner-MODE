@@ -68,7 +68,13 @@ export type SimResult = {
   finalVars: Record<string, string>
 }
 
-export type SimOptions = { maxSteps?: number; maxIterations?: number; dialect?: 'js' | 'dart' }
+export type SimOptions = {
+  maxSteps?: number
+  maxIterations?: number
+  dialect?: 'js' | 'dart'
+  /** Nazwy spoza wycinka dostają zaślepki zamiast ReferenceError (panel, kod z lekcji). */
+  stubs?: boolean
+}
 
 class JsThrow {
   constructor(
@@ -142,6 +148,8 @@ class Interpreter {
   private promises: JsPromise[] = []
   private rng = 42
   private dart: boolean
+  private stubs: boolean
+  private stubbed = new Set<string>()
 
   constructor(
     private program: Program,
@@ -151,6 +159,7 @@ class Interpreter {
     this.maxSteps = opts.maxSteps ?? 3000
     this.maxIter = opts.maxIterations ?? 1000
     this.dart = opts.dialect === 'dart'
+    this.stubs = !!opts.stubs
     this.builtins = { vars: new Map(), parent: null, frame: 'builtins' }
     this.global = { vars: new Map(), parent: this.builtins, frame: 'global' }
     this.installBuiltins()
@@ -169,6 +178,9 @@ class Interpreter {
       this.eventLoop()
     } catch (e) {
       error = this.toError(e)
+    }
+    if (this.stubbed.size) {
+      this.hypotheses.add(`Tego wycinek nie definiuje: ${[...this.stubbed].map(n => `\`${n}\``).join(', ')}. Symulator podstawił za to wartości zastępcze (‹…›), więc wszystko, co od nich zależy, jest umowne.`)
     }
     const unhandled = this.promises.filter(p => p.state === 'rejected' && !p.handled && p.label !== 'program')
     for (const p of unhandled) {
@@ -331,7 +343,30 @@ class Interpreter {
         return { value: slot.value, env: e }
       }
     }
+    if (this.stubs) {
+      const value = this.makeStub(name)
+      this.global.vars.set(name, { value, kind: 'var' })
+      this.stubbed.add(name)
+      return { value, env: this.global }
+    }
     return this.throwError('ReferenceError', `${name} is not defined`, line)
+  }
+
+  /** Wartość zastępcza dla nazwy, której wycinek nie definiuje. */
+  private makeStub(name: string): JsBuiltin {
+    const self = this
+    const b: JsBuiltin = {
+      kind: 'builtin',
+      id: this.nextId++,
+      name,
+      stub: true,
+      props: new Map(),
+      // eslint-disable-next-line require-yield
+      call: function* () {
+        return self.makeStub(`${name}(…)`)
+      },
+    }
+    return b
   }
 
   private assignVar(env: Env, name: string, value: Value, line: number): void {
@@ -343,6 +378,11 @@ class Interpreter {
         slot.value = value
         return
       }
+    }
+    if (this.stubs) {
+      this.global.vars.set(name, { value, kind: 'var' })
+      this.stubbed.add(name)
+      return
     }
     this.throwError('ReferenceError', `${name} is not defined (przypisanie do niezadeklarowanej zmiennej; w trybie strict to błąd)`, line)
   }
@@ -1007,6 +1047,7 @@ class Interpreter {
   }
 
   private *construct(callee: Value, args: Value[], line: number): Gen<Value> {
+    if (isRef(callee) && callee.kind === 'builtin' && callee.stub) return this.makeStub(`new ${callee.name}(…)`)
     if (isRef(callee) && callee.kind === 'builtin') {
       const ctor = callee.props?.get('__construct')
       if (ctor && isRef(ctor) && ctor.kind === 'builtin') return yield* ctor.call(undefined, args)
@@ -1388,6 +1429,10 @@ class Interpreter {
       obj.statics.set(toStr(key), v)
       return
     }
+    if (obj.kind === 'builtin' && obj.stub) {
+      obj.props!.set(toStr(key), v)
+      return
+    }
     throw new Unsupported(`Przypisanie właściwości do ${obj.kind}`)
   }
 
@@ -1471,6 +1516,11 @@ class Interpreter {
         if (k === 'name') return obj.name
         return undefined
       case 'builtin':
+        if (obj.stub) {
+          if (k === 'then') return undefined
+          if (!obj.props!.has(k)) obj.props!.set(k, this.makeStub(`${obj.name}.${k}`))
+          return obj.props!.get(k)
+        }
         if (k === 'name') return obj.name
         return obj.props?.get(k)
       case 'function':

@@ -54,6 +54,6 @@ if [ -n "$NODE" ]; then
 fi
 
 LIST="$(claude plugin list 2>&1 || true)"
-for p in claude-code-mentor context-bar; do
+for p in claude-code-mentor; do
   if printf '%s' "$LIST" | grep -q "$p@$MARKET"; then line "$p" 'zainstalowany'; else line "$p" 'nie zainstalowany' 0; fi
 done

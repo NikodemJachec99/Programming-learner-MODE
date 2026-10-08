@@ -46,7 +46,45 @@ export const USER_TABLES = Object.freeze([
   'usage',
 ]);
 const CATALOG_TABLES = Object.freeze(['concepts', 'concept_edges']);
-const ALL_TABLES = Object.freeze(['meta', ...CATALOG_TABLES, ...USER_TABLES]);
+/** Kod z historii zmian (Change Lab): kasowany razem z danymi, ale nigdy nie trafia do eksportu. */
+export const SNAPSHOT_TABLES = Object.freeze(['changes']);
+const ALL_TABLES = Object.freeze(['meta', ...CATALOG_TABLES, ...USER_TABLES, ...SNAPSHOT_TABLES]);
+/** Ile zmian z kodem trzymamy: na projekt i maksymalny wiek. */
+export const CHANGE_KEEP = Object.freeze({ perProject: 400, maxAgeDays: 60, textMax: 60_000 });
+const CHANGE_LIST_COLS =
+  'id, session_id, project_id, turn_key, turn_label, ts, tool, kind, status, file_path, lang, line, added, removed, summary, concepts_json, facts_json, (before_text IS NOT NULL) AS has_before, (after_text IS NOT NULL) AS has_after';
+
+function changeRow(r, full) {
+  const out = {
+    id: r.id,
+    sessionId: r.session_id,
+    projectId: r.project_id,
+    turnKey: r.turn_key,
+    turnLabel: r.turn_label,
+    ts: r.ts,
+    tool: r.tool,
+    kind: r.kind,
+    status: r.status,
+    file: r.file_path,
+    lang: r.lang,
+    line: r.line,
+    added: r.added,
+    removed: r.removed,
+    summary: r.summary,
+    concepts: r.concepts_json ? JSON.parse(r.concepts_json) : [],
+    facts: r.facts_json ? JSON.parse(r.facts_json) : [],
+    hasBefore: full ? r.before_text !== null : !!r.has_before,
+    hasAfter: full ? r.after_text !== null : !!r.has_after,
+  };
+  if (full) {
+    out.unified = r.unified;
+    out.before = r.before_text;
+    out.beforeStart = r.before_start;
+    out.after = r.after_text;
+    out.afterStart = r.after_start;
+  }
+  return out;
+}
 
 const KEYED = Object.freeze({
   settings: ['key'],
@@ -646,6 +684,71 @@ const OPS = {
     });
   },
 
+  saveChange(ctx, args) {
+    const c = args?.change;
+    if (!isObj(c)) fail('change must be an object');
+    const id = str(c, 'id', { max: 200 });
+    const row = {
+      id,
+      session_id: optStr(pick(c, 'sessionId'), 'sessionId', 500),
+      project_id: optStr(pick(c, 'projectId'), 'projectId', 500),
+      turn_key: optStr(pick(c, 'turnKey'), 'turnKey', 500),
+      turn_label: optStr(pick(c, 'turnLabel'), 'turnLabel', 300),
+      ts: optInt(pick(c, 'ts'), 'ts') ?? Date.now(),
+      tool: optStr(pick(c, 'tool'), 'tool', 100),
+      kind: optStr(pick(c, 'kind'), 'kind', 100),
+      status: optStr(pick(c, 'status'), 'status', 50) ?? 'ok',
+      file_path: optStr(pick(c, 'file'), 'file', 4096),
+      lang: optStr(pick(c, 'lang'), 'lang', 50),
+      line: optInt(pick(c, 'line'), 'line'),
+      added: optInt(pick(c, 'added'), 'added'),
+      removed: optInt(pick(c, 'removed'), 'removed'),
+      summary: optStr(pick(c, 'summary'), 'summary', SUMMARY_MAX),
+      concepts_json: toJson(pick(c, 'concepts') ?? null, 'concepts'),
+      facts_json: toJson(pick(c, 'facts') ?? null, 'facts'),
+      unified: optStr(pick(c, 'unified'), 'unified', CHANGE_KEEP.textMax),
+      before_text: optStr(pick(c, 'before'), 'before', CHANGE_KEEP.textMax),
+      before_start: optInt(pick(c, 'beforeStart'), 'beforeStart'),
+      after_text: optStr(pick(c, 'after'), 'after', CHANGE_KEEP.textMax),
+      after_start: optInt(pick(c, 'afterStart'), 'afterStart'),
+    };
+    return withTx(ctx.db, 'IMMEDIATE', () => {
+      ctx.db
+        .prepare(
+          `INSERT OR REPLACE INTO changes(id, session_id, project_id, turn_key, turn_label, ts, tool, kind, status, file_path, lang, line,
+             added, removed, summary, concepts_json, facts_json, unified, before_text, before_start, after_text, after_start)
+           VALUES($id,$session_id,$project_id,$turn_key,$turn_label,$ts,$tool,$kind,$status,$file_path,$lang,$line,
+             $added,$removed,$summary,$concepts_json,$facts_json,$unified,$before_text,$before_start,$after_text,$after_start)`,
+        )
+        .run(row);
+      // retencja: najstarsze ponad limit w projekcie i wszystko starsze niż maxAgeDays
+      const cutoff = row.ts - CHANGE_KEEP.maxAgeDays * 86_400_000;
+      const aged = ctx.db.prepare('DELETE FROM changes WHERE ts < ?').run(cutoff).changes;
+      const over = ctx.db
+        .prepare(
+          `DELETE FROM changes WHERE project_id IS ? AND id NOT IN
+             (SELECT id FROM changes WHERE project_id IS ? ORDER BY ts DESC LIMIT ?)`,
+        )
+        .run(row.project_id, row.project_id, CHANGE_KEEP.perProject).changes;
+      return { id, pruned: Number(aged) + Number(over) };
+    });
+  },
+
+  getChanges(ctx, args) {
+    const limit = Math.min(optInt(args?.limit, 'limit') ?? 60, 400);
+    const projectId = optStr(args?.projectId, 'projectId', 500);
+    const rows = projectId
+      ? ctx.db.prepare(`SELECT ${CHANGE_LIST_COLS} FROM changes WHERE project_id = ? ORDER BY ts DESC, rowid DESC LIMIT ?`).all(projectId, limit)
+      : ctx.db.prepare(`SELECT ${CHANGE_LIST_COLS} FROM changes ORDER BY ts DESC, rowid DESC LIMIT ?`).all(limit);
+    return rows.map((r) => changeRow(r, false));
+  },
+
+  getChange(ctx, args) {
+    const id = str(args, 'id', { max: 200 });
+    const r = ctx.db.prepare('SELECT * FROM changes WHERE id = ?').get(id);
+    return r ? changeRow(r, true) : null;
+  },
+
   recordEvidence(ctx, args) {
     const ev = validateEvidence(args, 'args');
     const now = nowOf(args);
@@ -1168,7 +1271,7 @@ const OPS = {
       backup = vacuumInto(ctx.db, uniquePath(path.join(ctx.dataDir, 'backups'), `pre-wipe-${timestamp()}`, '.db'));
     }
     withTx(ctx.db, 'IMMEDIATE', () => {
-      for (const t of [...USER_TABLES].reverse()) ctx.db.exec(`DELETE FROM "${t}"`);
+      for (const t of [...SNAPSHOT_TABLES, ...[...USER_TABLES].reverse()]) ctx.db.exec(`DELETE FROM "${t}"`);
       ctx.db.prepare("DELETE FROM meta WHERE key = 'last_backup_day'").run();
     });
     let vacuumed = true;
