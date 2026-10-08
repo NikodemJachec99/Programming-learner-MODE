@@ -17,7 +17,8 @@ export type Host = {
   version: () => Promise<string>
   isGitRepo: () => Promise<boolean>
   surfaces: () => Promise<readonly string[]>
-  localAppData: () => Promise<string | undefined>
+  /** Katalog danych Mentora: Windows %LOCALAPPDATA%, macOS ~/Library/Application Support, Linux XDG. */
+  dataDir: () => Promise<string | undefined>
   pluginRoot: string
   fsRead: (path: string) => Promise<string>
   fsExists: (path: string) => Promise<boolean>
@@ -56,7 +57,7 @@ export function offlineHost(base: Pick<Host, 'get' | 'set' | 'now' | 'invalidate
     version: () => Promise.resolve('?'),
     isGitRepo: () => Promise.resolve(false),
     surfaces: () => Promise.resolve([]),
-    localAppData: () => Promise.resolve(undefined),
+    dataDir: () => Promise.resolve(undefined),
     pluginRoot: '',
     fsRead: no,
     fsExists: () => Promise.resolve(false),

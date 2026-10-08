@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0
+
+### Claude Code Mentor
+
+- Flutter i Dart: wykrywanie pojęć w plikach `.dart`, 10 nowych pojęć (widgety, stan, layout, nawigacja, zarządzanie stanem, FutureBuilder, null safety, Future i Stream, wieloplatformowość) z 30 pytaniami.
+- Symulator wykonuje podzbiór Darta krok po kroku: null safety, parametry nazwane, klasy z `factory` i getterami, enumy, wyjątki, `Future`, `async`/`await`, wypis w formacie Darta.
+- Drzewo widgetów dla kodu interfejsu Fluttera.
+- Eksplorator warunków z semantyką Darta 3.
+- Komendy `flutter`/`dart` (pub add, test, run, analyze) i zależności z `pubspec.yaml`.
+- macOS i Linux: katalog danych zgodny z systemem, szukanie Node w Homebrew, skrypty `install.sh`, `uninstall.sh`, `diagnose.sh`.
+
+### Licencja
+
+- Projekt na licencji MIT.
+
 ## 1.1.0
 
 ### Claude Code Mentor

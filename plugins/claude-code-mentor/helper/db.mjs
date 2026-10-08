@@ -202,8 +202,12 @@ export const MIGRATIONS = Object.freeze([
 // ---------------------------------------------------------------- utilities
 
 export function defaultDataDir() {
-  const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-  return path.join(base, 'ClaudeCodeMentor');
+  if (process.env.CLAUDE_CODE_MENTOR_DATA) return process.env.CLAUDE_CODE_MENTOR_DATA;
+  if (process.platform === 'win32') {
+    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'ClaudeCodeMentor');
+  }
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'ClaudeCodeMentor');
+  return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'ClaudeCodeMentor');
 }
 
 export function isBusyError(e) {

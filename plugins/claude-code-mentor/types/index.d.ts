@@ -174,6 +174,8 @@ export type MentorSimState = {
   source: string
   origin: string
   mode: 'js' | 'sql' | 'cond'
+  /** Język kodu w trybie 'js': JavaScript/TypeScript albo Dart. */
+  dialect?: 'js' | 'dart'
   edits: { siteId: string; start: number; end: number; text: string; before: string; line: number }[]
   variant: 'A' | 'B'
   cursor: number
@@ -181,7 +183,7 @@ export type MentorSimState = {
   sqlSetup: string
   sqlQuery: string
   sqlResult: string | null
-  condLang: 'js' | 'py' | 'php'
+  condLang: 'js' | 'py' | 'php' | 'dart'
   condOp: string
   condLeft: string
   condRight: string

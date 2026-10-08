@@ -1,8 +1,9 @@
 // Biblioteka pojęć Claude Code Mentor (PL). Dane statyczne: działa bez modelu.
 // Graf zależności (prereqs) jest acykliczny; quizy mają zweryfikowane klucze.
 import type { ConceptDef } from './types'
+import { FLUTTER_CONCEPTS } from './flutter'
 
-export const CONCEPTS: readonly ConceptDef[] = [
+const BASE: readonly ConceptDef[] = [
   // ───────────────────────── fundamentals ─────────────────────────
   {
     id: 'variables',
@@ -6248,3 +6249,5 @@ const r = await client.messages.create({ model, max_tokens: 1024,
   },
 
 ]
+
+export const CONCEPTS: readonly ConceptDef[] = [...BASE, ...FLUTTER_CONCEPTS]

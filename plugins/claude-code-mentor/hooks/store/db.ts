@@ -23,11 +23,13 @@ const WRITE_OPS = new Set([
 
 export class DbError extends Error {}
 
+/** Łączy ścieżkę separatorem systemu, który widać po pierwszej części (C:\\… albo /…). */
 export function joinPath(...parts: string[]): string {
+  const sep = /^[A-Za-z]:|\\/.test(parts[0] ?? '') && !(parts[0] ?? '').startsWith('/') ? '\\' : '/'
   return parts
     .filter(Boolean)
     .map((p, i) => (i === 0 ? p.replace(/[\\/]+$/, '') : p.replace(/^[\\/]+|[\\/]+$/g, '')))
-    .join('\\')
+    .join(sep)
 }
 
 async function spawnJson(io: Host, ctx: DbCtx, script: string, payload: unknown, timeoutMs: number): Promise<unknown> {

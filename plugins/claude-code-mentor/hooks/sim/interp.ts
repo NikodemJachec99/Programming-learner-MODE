@@ -10,6 +10,7 @@
 import type { Expr, FuncNode, Pattern, Program, SpreadEl, Stmt } from './ast'
 import { SimSyntaxError } from './lexer'
 import { parse } from './parser'
+import { dartToJs } from './dart'
 import {
   compare,
   display,
@@ -67,7 +68,7 @@ export type SimResult = {
   finalVars: Record<string, string>
 }
 
-export type SimOptions = { maxSteps?: number; maxIterations?: number }
+export type SimOptions = { maxSteps?: number; maxIterations?: number; dialect?: 'js' | 'dart' }
 
 class JsThrow {
   constructor(
@@ -87,14 +88,21 @@ type Task = { label: string; run: () => void; hypothetical?: boolean }
 type Macro = Task & { time: number; seq: number; id: number }
 
 const TDZ = Symbol('tdz')
+const NOPE = Symbol('nope')
 type SlotKind = 'let' | 'const' | 'var' | 'param' | 'func' | 'class'
 type Gen<T> = Generator<AwaitSignal, T, ResumeMsg>
 
 export function simulate(source: string, opts: SimOptions = {}): SimResult {
   const lines = source.split(/\r?\n/)
   let program: Program
+  let js = source
+  if (opts.dialect === 'dart') {
+    const tr = dartToJs(source)
+    if (!tr.ok) return emptyResult(lines, { kind: 'unsupported', message: tr.error, line: tr.line })
+    js = tr.js
+  }
   try {
-    program = parse(source)
+    program = parse(js)
   } catch (e) {
     if (e instanceof SimSyntaxError) {
       return emptyResult(lines, { kind: 'syntax', message: e.message, line: e.line })
@@ -133,6 +141,7 @@ class Interpreter {
   private global: Env
   private promises: JsPromise[] = []
   private rng = 42
+  private dart: boolean
 
   constructor(
     private program: Program,
@@ -141,9 +150,11 @@ class Interpreter {
   ) {
     this.maxSteps = opts.maxSteps ?? 3000
     this.maxIter = opts.maxIterations ?? 1000
+    this.dart = opts.dialect === 'dart'
     this.builtins = { vars: new Map(), parent: null, frame: 'builtins' }
     this.global = { vars: new Map(), parent: this.builtins, frame: 'global' }
     this.installBuiltins()
+    if (this.dart) this.installDart()
   }
 
   // ===================== uruchomienie =====================
@@ -842,6 +853,7 @@ class Interpreter {
     } finally {
       this.condTrace = outer
     }
+    if (this.dart && typeof v !== 'boolean') this.throwError('TypeError', `W Darcie warunek musi mieć typ bool, a tu jest ${this.dartType(v)} ${display(v)}. Dart nie ma truthy/falsy (to błąd kompilacji)`, line)
     const b = toBoolean(v)
     if (!(typeof v === 'boolean')) trace.push(`wartość ${display(v)} nie jest boolean: w warunku liczy się jej prawdziwość (truthy/falsy) → ${b}`)
     this.lastCondDetail = trace
@@ -933,6 +945,7 @@ class Interpreter {
       return this.throwError('TypeError', `${displayName ?? display(fn)} is not a function`, line)
     }
     if (fn.kind === 'builtin') return yield* fn.call(thisArg, args)
+    if (fn.kind === 'class' && this.dart) return yield* this.construct(fn, args, line)
     if (fn.kind === 'class') return this.throwError('TypeError', `Class constructor ${fn.name} cannot be invoked without 'new'`, line)
     if (this.stack.length > 200) this.throwError('RangeError', 'Maximum call stack size exceeded (w symulatorze limit 200 ramek; w Node/przeglądarce około 10 000)', line)
     const node = fn.node
@@ -1053,7 +1066,7 @@ class Interpreter {
         return undefined
       case 'Template': {
         let s = ''
-        for (const p of e.parts) s += p.kind === 'text' ? p.text : toStr(yield* this.eval(p.expr, env))
+        for (const p of e.parts) s += p.kind === 'text' ? p.text : this.dart ? yield* this.dartStr(yield* this.eval(p.expr, env)) : toStr(yield* this.eval(p.expr, env))
         return s
       }
       case 'Ident':
@@ -1246,6 +1259,10 @@ class Interpreter {
   }
 
   private binop(op: string, l: Value, r: Value, line: number): Value {
+    if (this.dart) {
+      const d = this.dartBinop(op, l, r, line)
+      if (d !== NOPE) return d
+    }
     switch (op) {
       case '+': {
         const pl = isRef(l) ? this.toPrim(l) : l
@@ -1423,6 +1440,13 @@ class Interpreter {
   // ===================== właściwości =====================
 
   private getMember(obj: Value, key: string | number, line: number, objSrc?: string): Value {
+    if (this.dart) {
+      if ((obj === null || obj === undefined) && key === 'toString') return this.fnBuiltin('toString', () => 'null')
+      if (obj === null || obj === undefined) return this.throwError('NoSuchMethodError', `The getter '${key}' was called on null${objSrc ? ` (${objSrc} jest null)` : ''}`, line)
+      const d = this.dartMember(obj, String(key))
+      if (d !== NOPE) return d
+      if (this.isPlainMap(obj) && !obj.props.has(String(key))) return null
+    }
     if (obj === null || obj === undefined) {
       return this.throwError('TypeError', `Cannot read properties of ${display(obj)} (reading '${key}')${objSrc ? ` – ${objSrc} jest ${display(obj)}` : ''}`, line)
     }
@@ -1967,6 +1991,664 @@ class Interpreter {
         return d
       })],
     ])))
+  }
+
+  // ===================== dialekt Dart =====================
+
+  private dartType(v: Value): string {
+    if (v === null || v === undefined) return 'Null'
+    if (typeof v === 'number') return Number.isInteger(v) ? 'int' : 'double'
+    if (typeof v === 'string') return 'String'
+    if (typeof v === 'boolean') return 'bool'
+    switch (v.kind) {
+      case 'array':
+        return 'List'
+      case 'object':
+        return v.internal instanceof Set ? 'Set' : v.isError ? toStr(v.props.get('__dart') ?? v.props.get('name')) : v.className && v.proto ? v.className : v.className ?? 'Map'
+      case 'promise':
+        return 'Future'
+      default:
+        return 'Function'
+    }
+  }
+
+  private isPlainMap(v: Value): v is JsObject {
+    return isRef(v) && v.kind === 'object' && !v.internal && !v.isError && !v.proto && !v.className
+  }
+
+  /** Tekst wartości tak, jak wypisze go Dart (print, interpolacja, toString). */
+  private *dartStr(v: Value, depth = 0): Gen<string> {
+    if (v === null || v === undefined) return 'null'
+    if (typeof v === 'string') return v
+    if (typeof v === 'number') return Object.is(v, -0) ? '0' : String(v)
+    if (typeof v === 'boolean') return String(v)
+    if (depth > 3) return '…'
+    switch (v.kind) {
+      case 'array': {
+        const parts: string[] = []
+        for (const x of v.items.slice(0, 50)) parts.push(yield* this.dartStr(x, depth + 1))
+        const s = parts.join(', ') + (v.items.length > 50 ? ', ...' : '')
+        return v.lazy ? `(${s})` : `[${s}]`
+      }
+      case 'object': {
+        if (v.isError) {
+          const msg = toStr(v.props.get('message') ?? '')
+          return msg ? `${toStr(v.props.get('name'))}: ${msg}` : toStr(v.props.get('name'))
+        }
+        if (v.internal instanceof Set) {
+          const parts: string[] = []
+          for (const x of v.internal) parts.push(yield* this.dartStr(x as Value, depth + 1))
+          return `{${parts.join(', ')}}`
+        }
+        if (v.className === 'Duration') {
+          const ms = toNumber(v.props.get('inMilliseconds'))
+          const h = Math.floor(ms / 3600000)
+          const m = Math.floor((ms % 3600000) / 60000)
+          const s = (ms % 60000) / 1000
+          return `${h}:${String(m).padStart(2, '0')}:${s.toFixed(6).padStart(9, '0')}`
+        }
+        for (let p = v.proto; p; p = p.proto) {
+          const f = p.props.get('toString')
+          if (isRef(f) && f.kind === 'function') return toStr(yield* this.callFunction(f, v, [], this.lastLine, 'toString'))
+        }
+        if (v.className && v.proto) return `Instance of '${v.className}'`
+        const parts: string[] = []
+        for (const [k, x] of [...v.props.entries()].slice(0, 30)) parts.push(`${k}: ${yield* this.dartStr(x, depth + 1)}`)
+        return `{${parts.join(', ')}}`
+      }
+      case 'promise':
+        return "Instance of 'Future<dynamic>'"
+      case 'class':
+        return v.name
+      default:
+        return 'Closure'
+    }
+  }
+
+  private lazy(items: Value[]): JsArray {
+    const a = this.newArray(items)
+    a.lazy = true
+    return a
+  }
+
+  private named(a: Value): JsObject | null {
+    return this.isPlainMap(a) ? a : null
+  }
+
+  /** Metody i właściwości Darta na wartościach. NOPE = brak, szukaj dalej jak w JS. */
+  private dartMember(obj: Value, k: string): Value | typeof NOPE {
+    const self = this
+    const F = (name: string, f: (args: Value[]) => Value) => this.fnBuiltin(name, (_t, a) => f(a))
+    const G = (name: string, f: (args: Value[]) => Gen<Value>) => this.builtin(name, (_t, a) => f(a))
+    const call = (fn: Value, ...args: Value[]) => self.callFunction(fn, undefined, args, self.lastLine, 'callback')
+    const noElement = () => self.throwError('Bad state', 'No element', self.lastLine)
+    if (typeof obj === 'string') {
+      switch (k) {
+        case 'contains':
+          return F(k, a => obj.includes(toStr(a[0])))
+        case 'isEmpty':
+          return obj.length === 0
+        case 'isNotEmpty':
+          return obj.length > 0
+        case 'padLeft':
+          return F(k, a => obj.padStart(toNumber(a[0]), a[1] === undefined ? ' ' : toStr(a[1])))
+        case 'padRight':
+          return F(k, a => obj.padEnd(toNumber(a[0]), a[1] === undefined ? ' ' : toStr(a[1])))
+        case 'trimLeft':
+        case 'trimRight':
+          return F(k, () => (k === 'trimLeft' ? obj.trimStart() : obj.trimEnd()))
+        case 'codeUnitAt':
+          return F(k, a => obj.charCodeAt(toNumber(a[0])))
+        case 'compareTo':
+          return F(k, a => (obj < toStr(a[0]) ? -1 : obj > toStr(a[0]) ? 1 : 0))
+      }
+      return NOPE
+    }
+    if (typeof obj === 'number') {
+      switch (k) {
+        case 'toStringAsFixed':
+          return F(k, a => obj.toFixed(toNumber(a[0] ?? 0)))
+        case 'toInt':
+        case 'truncate':
+          return F(k, () => Math.trunc(obj))
+        case 'toDouble':
+          return F(k, () => obj)
+        case 'round':
+          return F(k, () => Math.sign(obj) * Math.round(Math.abs(obj)))
+        case 'floor':
+        case 'ceil':
+        case 'abs':
+          return F(k, () => Math[k](obj))
+        case 'isEven':
+          return obj % 2 === 0
+        case 'isOdd':
+          return Math.abs(obj % 2) === 1
+        case 'isNegative':
+          return obj < 0
+        case 'isNaN':
+          return Number.isNaN(obj)
+        case 'isFinite':
+          return Number.isFinite(obj)
+        case 'sign':
+          return Math.sign(obj)
+        case 'clamp':
+          return F(k, a => Math.min(Math.max(obj, toNumber(a[0])), toNumber(a[1])))
+        case 'remainder':
+          return F(k, a => obj % toNumber(a[0]))
+        case 'compareTo':
+          return F(k, a => Math.sign(obj - toNumber(a[0])))
+        case 'toString':
+          return F(k, () => String(obj))
+      }
+      return NOPE
+    }
+    if (typeof obj === 'boolean') return k === 'toString' ? F(k, () => String(obj)) : NOPE
+    if (!isRef(obj)) return NOPE
+    if (k === 'toString' && !(obj.kind === 'object' && [...(function* () { for (let p = obj.proto; p; p = p.proto) yield p })()].some(p => p.props.has('toString')))) {
+      return G(k, function* () {
+        return yield* self.dartStr(obj)
+      })
+    }
+    if (obj.kind === 'array') {
+      const items = obj.items
+      switch (k) {
+        case 'add':
+          return F(k, a => (items.push(a[0]), undefined))
+        case 'addAll':
+          return F(k, a => (items.push(...self.iterate(a[0], self.lastLine)), undefined))
+        case 'contains':
+          return F(k, a => items.some(x => strictEquals(x, a[0])))
+        case 'isEmpty':
+          return items.length === 0
+        case 'isNotEmpty':
+          return items.length > 0
+        case 'first':
+          return items.length ? items[0] : noElement()
+        case 'last':
+          return items.length ? items[items.length - 1] : noElement()
+        case 'single':
+          return items.length === 1 ? items[0] : self.throwError('Bad state', items.length ? 'Too many elements' : 'No element', self.lastLine)
+        case 'elementAt':
+          return F(k, a => items[toNumber(a[0])])
+        case 'removeLast':
+          return F(k, () => (items.length ? items.pop() : noElement()))
+        case 'removeAt':
+          return F(k, a => items.splice(toNumber(a[0]), 1)[0])
+        case 'remove':
+          return F(k, a => {
+            const i = items.findIndex(x => strictEquals(x, a[0]))
+            if (i >= 0) items.splice(i, 1)
+            return i >= 0
+          })
+        case 'insert':
+          return F(k, a => (items.splice(toNumber(a[0]), 0, a[1]), undefined))
+        case 'clear':
+          return F(k, () => ((items.length = 0), undefined))
+        case 'toList':
+          return F(k, () => self.newArray([...items]))
+        case 'toSet': {
+          return F(k, () => {
+            const o = self.newObject('Set')
+            o.internal = new Set<Value>(items)
+            return o
+          })
+        }
+        case 'join':
+          return G(k, function* (a) {
+            const parts: string[] = []
+            for (const x of items) parts.push(yield* self.dartStr(x))
+            return parts.join(a[0] === undefined ? '' : toStr(a[0]))
+          })
+        case 'reversed':
+          return this.lazy([...items].reverse())
+        case 'sublist':
+          return F(k, a => self.newArray(items.slice(toNumber(a[0]), a[1] === undefined || a[1] === null ? undefined : toNumber(a[1]))))
+        case 'take':
+          return F(k, a => self.lazy(items.slice(0, toNumber(a[0]))))
+        case 'skip':
+          return F(k, a => self.lazy(items.slice(toNumber(a[0]))))
+        case 'where':
+          return G(k, function* (a) {
+            const out: Value[] = []
+            for (const x of items) if (toBoolean(yield* call(a[0], x))) out.push(x)
+            return self.lazy(out)
+          })
+        case 'map':
+          return G(k, function* (a) {
+            const out: Value[] = []
+            for (const x of items) out.push(yield* call(a[0], x))
+            return self.lazy(out)
+          })
+        case 'expand':
+          return G(k, function* (a) {
+            const out: Value[] = []
+            for (const x of items) out.push(...self.iterate(yield* call(a[0], x), self.lastLine))
+            return self.lazy(out)
+          })
+        case 'any':
+          return G(k, function* (a) {
+            for (const x of items) if (toBoolean(yield* call(a[0], x))) return true
+            return false
+          })
+        case 'every':
+          return G(k, function* (a) {
+            for (const x of items) if (!toBoolean(yield* call(a[0], x))) return false
+            return true
+          })
+        case 'firstWhere':
+        case 'lastWhere':
+          return G(k, function* (a) {
+            const list = k === 'firstWhere' ? items : [...items].reverse()
+            for (const x of list) if (toBoolean(yield* call(a[0], x))) return x
+            const orElse = self.named(a[1])?.props.get('orElse')
+            if (orElse) return yield* call(orElse)
+            return noElement()
+          })
+        case 'fold':
+          return G(k, function* (a) {
+            let acc = a[0]
+            for (const x of items) acc = yield* call(a[1], acc, x)
+            return acc
+          })
+        case 'reduce':
+          return G(k, function* (a) {
+            if (!items.length) return noElement()
+            let acc = items[0]
+            for (const x of items.slice(1)) acc = yield* call(a[0], acc, x)
+            return acc
+          })
+        case 'forEach':
+          return G(k, function* (a) {
+            for (const x of [...items]) yield* call(a[0], x)
+            return undefined
+          })
+        case 'sort':
+          return G(k, function* (a) {
+            const arr = [...items]
+            // sortowanie przez wstawianie: deterministyczne i z wywołaniami porównania w krokach
+            for (let i = 1; i < arr.length; i++) {
+              for (let j = i; j > 0; j--) {
+                const c = a[0] === undefined ? (arr[j - 1]! < arr[j]! ? -1 : arr[j - 1]! > arr[j]! ? 1 : 0) : toNumber(yield* call(a[0], arr[j - 1], arr[j]))
+                if (c <= 0) break
+                ;[arr[j - 1], arr[j]] = [arr[j], arr[j - 1]]
+              }
+            }
+            items.splice(0, items.length, ...arr)
+            return undefined
+          })
+      }
+      return NOPE
+    }
+    if (obj.kind === 'object' && obj.internal instanceof Set) {
+      const set = obj.internal
+      switch (k) {
+        case 'contains':
+          return F(k, a => set.has(a[0]))
+        case 'length':
+          return set.size
+        case 'isEmpty':
+          return set.size === 0
+        case 'isNotEmpty':
+          return set.size > 0
+        case 'remove':
+          return F(k, a => set.delete(a[0]))
+        case 'add':
+          return F(k, a => {
+            const had = set.has(a[0])
+            set.add(a[0])
+            return !had
+          })
+        case 'toList':
+          return F(k, () => self.newArray([...set] as Value[]))
+        case 'first':
+          return set.size ? ([...set][0] as Value) : noElement()
+      }
+      return NOPE
+    }
+    if (this.isPlainMap(obj)) {
+      if (obj.props.has(k) && !['length', 'keys', 'values', 'entries', 'isEmpty', 'isNotEmpty'].includes(k)) return NOPE
+      const props = obj.props
+      switch (k) {
+        case 'containsKey':
+          return F(k, a => props.has(toStr(a[0])))
+        case 'containsValue':
+          return F(k, a => [...props.values()].some(x => strictEquals(x, a[0])))
+        case 'keys':
+          return this.lazy([...props.keys()])
+        case 'values':
+          return this.lazy([...props.values()])
+        case 'entries':
+          return this.lazy([...props.entries()].map(([key, value]) => {
+            const e = self.newObject('MapEntry')
+            e.props.set('key', key)
+            e.props.set('value', value)
+            return e
+          }))
+        case 'length':
+          return props.size
+        case 'isEmpty':
+          return props.size === 0
+        case 'isNotEmpty':
+          return props.size > 0
+        case 'remove':
+          return F(k, a => {
+            const key = toStr(a[0])
+            const v = props.has(key) ? props.get(key) : null
+            props.delete(key)
+            return v
+          })
+        case 'clear':
+          return F(k, () => (props.clear(), undefined))
+        case 'addAll':
+          return F(k, a => {
+            if (isRef(a[0]) && a[0].kind === 'object') for (const [key, v] of a[0].props) props.set(key, v)
+            return undefined
+          })
+        case 'putIfAbsent':
+          return G(k, function* (a) {
+            const key = toStr(a[0])
+            if (!props.has(key)) props.set(key, yield* call(a[1]))
+            return props.get(key)
+          })
+        case 'update':
+          return G(k, function* (a) {
+            const key = toStr(a[0])
+            if (!props.has(key)) {
+              const ifAbsent = self.named(a[2])?.props.get('ifAbsent')
+              if (!ifAbsent) return self.throwError('Invalid argument(s)', `Key not in map: ${key}`, self.lastLine)
+              props.set(key, yield* call(ifAbsent))
+            } else props.set(key, yield* call(a[1], props.get(key)))
+            return props.get(key)
+          })
+        case 'forEach':
+          return G(k, function* (a) {
+            for (const [key, v] of [...props]) yield* call(a[0], key, v)
+            return undefined
+          })
+      }
+      return NOPE
+    }
+    if (obj.kind === 'promise') {
+      if (k === 'catchError') return this.promiseMember(obj, 'catch')
+      if (k === 'whenComplete') return this.promiseMember(obj, 'finally')
+    }
+    return NOPE
+  }
+
+  private installDart(): void {
+    const g = (name: string, v: Value) => this.builtins.vars.set(name, { value: v, kind: 'const' })
+    const self = this
+    const L = () => self.lastLine
+    const F = (name: string, f: (args: Value[]) => Value) => this.fnBuiltin(name, (_t, a) => f(a))
+    const obj = (name: string, props: [string, Value][]) => {
+      const o = this.newObject(name)
+      for (const [k, v] of props) o.props.set(k, v)
+      return o
+    }
+    this.hypotheses.add('Dart wykonuję w modelu JavaScriptu: int i double to tu jedna liczba (6 / 2 da 3, w Darcie 3.0), a typy sprawdzam dopiero w trakcie działania. Błąd, który Dart zgłosi już przy kompilacji, tu wyjdzie dopiero w danym kroku.')
+
+    g('print', this.builtin('print', function* (_t, a) {
+      self.out.push(yield* self.dartStr(a[0]))
+      return undefined
+    }))
+    const errorNames: [string, string][] = [
+      ['Exception', 'Exception'],
+      ['FormatException', 'FormatException'],
+      ['TimeoutException', 'TimeoutException'],
+      ['StateError', 'Bad state'],
+      ['ArgumentError', 'Invalid argument(s)'],
+      ['RangeError', 'RangeError'],
+      ['UnimplementedError', 'UnimplementedError'],
+      ['UnsupportedError', 'Unsupported operation'],
+    ]
+    for (const [name, shown] of errorNames) {
+      const b = this.builtin(name, function* (_t, a) {
+        const e = self.makeError(shown, a[0] === undefined || a[0] === null ? '' : yield* self.dartStr(a[0]))
+        e.props.set('__dart', name)
+        return e
+      })
+      b.props = new Map([['__construct', b]])
+      g(name, b)
+    }
+    const err = (dart: string, shown: string, msg: string): never => {
+      const e = self.makeError(shown, msg)
+      e.props.set('__dart', dart)
+      throw new JsThrow(e, L())
+    }
+    const intRe = /^\s*[+-]?(\d+|0[xX][0-9a-fA-F]+)\s*$/
+    const dblRe = /^\s*[+-]?(\d+\.?\d*([eE][+-]?\d+)?|\.\d+([eE][+-]?\d+)?|Infinity|NaN)\s*$/
+    g('int', obj('int', [
+      ['parse', F('int.parse', a => (intRe.test(toStr(a[0])) ? Number(toStr(a[0]).trim()) : err('FormatException', 'FormatException', `Invalid radix-10 number (at character 1): ${toStr(a[0])}`)))],
+      ['tryParse', F('int.tryParse', a => (intRe.test(toStr(a[0])) ? Number(toStr(a[0]).trim()) : null))],
+    ]))
+    g('double', obj('double', [
+      ['parse', F('double.parse', a => (dblRe.test(toStr(a[0])) ? Number(toStr(a[0]).trim()) : err('FormatException', 'FormatException', `Invalid double: ${toStr(a[0])}`)))],
+      ['tryParse', F('double.tryParse', a => (dblRe.test(toStr(a[0])) ? Number(toStr(a[0]).trim()) : null))],
+      ['infinity', Infinity],
+      ['nan', NaN],
+    ]))
+    g('num', obj('num', [
+      ['parse', F('num.parse', a => (dblRe.test(toStr(a[0])) || intRe.test(toStr(a[0])) ? Number(toStr(a[0]).trim()) : err('FormatException', 'FormatException', `Invalid number: ${toStr(a[0])}`)))],
+      ['tryParse', F('num.tryParse', a => (dblRe.test(toStr(a[0])) || intRe.test(toStr(a[0])) ? Number(toStr(a[0]).trim()) : null))],
+    ]))
+    g('nullCheck', F('!', a => (a[0] === null || a[0] === undefined ? err('TypeError', 'TypeError', 'Null check operator used on a null value') : a[0])))
+    g('intDiv', F('~/', a => {
+      const d = toNumber(a[1])
+      if (d === 0) {
+        self.hypotheses.add('~/ przez 0: Dart rzuca wyjątek, a jego dokładna klasa zależy od wersji Darta.')
+        return err('Exception', 'Exception', 'dzielenie całkowite przez zero (~/ 0)')
+      }
+      return Math.trunc(toNumber(a[0]) / d)
+    }))
+    g('isType', F('is', a => this.isDartType(a[0], toStr(a[1]))))
+    g('identical', F('identical', a => strictEquals(a[0], a[1])))
+    g('assert', F('assert', a => {
+      self.hypotheses.add('assert działa tylko w trybie debug (flutter run, dart run --enable-asserts). W wersji release jest pomijany.')
+      if (!toBoolean(a[0])) err('AssertionError', 'Assertion failed', a[1] === undefined ? '' : toStr(a[1]))
+      return undefined
+    }))
+    // dart:math
+    g('max', F('max', a => Math.max(toNumber(a[0]), toNumber(a[1]))))
+    g('min', F('min', a => Math.min(toNumber(a[0]), toNumber(a[1]))))
+    g('sqrt', F('sqrt', a => Math.sqrt(toNumber(a[0]))))
+    g('pow', F('pow', a => Math.pow(toNumber(a[0]), toNumber(a[1]))))
+    g('pi', Math.PI)
+    const rnd = () => {
+      self.hypotheses.add('Random() zwraca w symulatorze stały, powtarzalny ciąg liczb. W prawdziwym programie każde uruchomienie da inne wartości.')
+      self.rng = (self.rng * 1103515245 + 12345) % 2147483648
+      return self.rng / 2147483648
+    }
+    g('Random', F('Random', () => obj('Random', [
+      ['nextInt', F('nextInt', a => Math.floor(rnd() * toNumber(a[0])))],
+      ['nextDouble', F('nextDouble', () => rnd())],
+      ['nextBool', F('nextBool', () => rnd() < 0.5)],
+    ])))
+    // kolekcje
+    const mkSet = (items: Value[]) => {
+      const o = self.newObject('Set')
+      o.internal = new Set<Value>(items)
+      return o
+    }
+    g('List', this.builtin('List', function* () {
+      return self.newArray([])
+    }, new Map<string, Value>([
+      ['filled', F('List.filled', a => self.newArray(new Array<Value>(toNumber(a[0])).fill(a[1])))],
+      ['empty', F('List.empty', () => self.newArray([]))],
+      ['from', F('List.from', a => self.newArray(self.iterate(a[0], L())))],
+      ['of', F('List.of', a => self.newArray(self.iterate(a[0], L())))],
+      ['generate', this.builtin('List.generate', function* (_t, a) {
+        const out: Value[] = []
+        for (let i = 0; i < toNumber(a[0]); i++) out.push(yield* self.callFunction(a[1], undefined, [i], L(), 'generator'))
+        return self.newArray(out)
+      })],
+    ])))
+    g('Map', this.builtin('Map', function* () {
+      return self.newObject()
+    }, new Map<string, Value>([
+      ['from', F('Map.from', a => {
+        const o = self.newObject()
+        if (isRef(a[0]) && a[0].kind === 'object') for (const [k, v] of a[0].props) o.props.set(k, v)
+        return o
+      })],
+    ])))
+    g('Set', this.builtin('Set', function* () {
+      return mkSet([])
+    }, new Map<string, Value>([['from', F('Set.from', a => mkSet(self.iterate(a[0], L())))], ['of', F('Set.of', a => mkSet(self.iterate(a[0], L())))]])))
+    // czas, Future, Timer
+    const msOf = (d: Value) => (isRef(d) && d.kind === 'object' && d.className === 'Duration' ? toNumber(d.props.get('inMilliseconds')) : toNumber(d ?? 0))
+    g('Duration', F('Duration', a => {
+      const n = this.named(a[0])
+      const part = (k: string) => (n?.props.has(k) ? toNumber(n.props.get(k)) : 0)
+      const ms = part('days') * 86400000 + part('hours') * 3600000 + part('minutes') * 60000 + part('seconds') * 1000 + part('milliseconds') + part('microseconds') / 1000
+      return obj('Duration', [['inMilliseconds', ms], ['inSeconds', Math.trunc(ms / 1000)], ['inMinutes', Math.trunc(ms / 60000)]])
+    }))
+    const later = (label: string, delay: number, f: Value | undefined): JsPromise => {
+      const p = self.newPromise(label)
+      self.macro.push({
+        label,
+        time: self.clock + delay,
+        seq: self.seq++,
+        id: -1,
+        run: () => {
+          if (f === undefined || f === null) return self.resolvePromise(p, null)
+          try {
+            self.resolvePromise(p, self.runSync(self.callFunction(f, undefined, [], L(), 'callback')))
+          } catch (e) {
+            if (e instanceof JsThrow) self.settle(p, 'rejected', e.value)
+            else throw e
+          }
+        },
+      })
+      return p
+    }
+    const promiseAll = (this.builtins.vars.get('Promise')!.value as JsBuiltin).props!.get('all')!
+    const futureStatics = new Map<string, Value>([
+      ['delayed', F('Future.delayed', a => later(`Future.delayed(${msOf(a[0])} ms)`, msOf(a[0]), a[1]))],
+      ['value', F('Future.value', a => (isRef(a[0]) && a[0].kind === 'promise' ? a[0] : self.resolvedPromise(a[0] ?? null)))],
+      ['error', F('Future.error', a => {
+        const p = self.newPromise(`Future.error(${display(a[0])})`)
+        p.state = 'rejected'
+        p.value = a[0]
+        return p
+      })],
+      ['wait', promiseAll],
+      ['microtask', F('Future.microtask', a => {
+        const p = self.newPromise('Future.microtask')
+        self.micro.push({ label: 'Future.microtask(callback)', run: () => {
+          try {
+            self.resolvePromise(p, self.runSync(self.callFunction(a[0], undefined, [], L(), 'callback')))
+          } catch (e) {
+            if (e instanceof JsThrow) self.settle(p, 'rejected', e.value)
+            else throw e
+          }
+        } })
+        return p
+      })],
+    ])
+    g('Future', this.builtin('Future', function* (_t, a) {
+      return later('Future(callback)', 0, a[0])
+    }, futureStatics))
+    g('scheduleMicrotask', this.builtins.vars.get('queueMicrotask')!.value)
+    const timer = (delay: number, f: Value) => {
+      const handle = obj('Timer', [])
+      let cancelled = false
+      handle.props.set('cancel', F('cancel', () => ((cancelled = true), undefined)))
+      self.macro.push({ label: `Timer(${delay} ms)`, time: self.clock + delay, seq: self.seq++, id: -1, run: () => {
+        if (!cancelled) self.runTask(f)
+      } })
+      return handle
+    }
+    g('Timer', this.builtin('Timer', function* (_t, a) {
+      return timer(msOf(a[0]), a[1])
+    }, new Map<string, Value>([['run', F('Timer.run', a => timer(0, a[0]))]])))
+    g('DateTime', obj('DateTime', [['now', F('DateTime.now', () => {
+      self.hypotheses.add('DateTime.now() zwraca w symulatorze wirtualny czas (start 1970-01-01, rośnie tylko przy timerach).')
+      return obj('DateTime', [['millisecondsSinceEpoch', self.clock], ['toIso8601String', F('toIso8601String', () => new Date(self.clock).toISOString())]])
+    })]]))
+  }
+
+  private isDartType(v: Value, t: string): boolean {
+    const EXC = ['Exception', 'FormatException', 'TimeoutException']
+    switch (t) {
+      case 'int':
+        return typeof v === 'number' && Number.isInteger(v)
+      case 'double':
+        this.hypotheses.add('is double: symulator nie odróżnia 3 od 3.0, więc liczbę z ułamkiem traktuje jako double, a całkowitą jako int.')
+        return typeof v === 'number' && !Number.isInteger(v)
+      case 'num':
+        return typeof v === 'number'
+      case 'String':
+        return typeof v === 'string'
+      case 'bool':
+        return typeof v === 'boolean'
+      case 'Null':
+        return v === null || v === undefined
+      case 'dynamic':
+        return true
+      case 'Object':
+        return v !== null && v !== undefined
+      case 'List':
+      case 'Iterable':
+        return isRef(v) && v.kind === 'array'
+      case 'Map':
+        return this.isPlainMap(v)
+      case 'Set':
+        return isRef(v) && v.kind === 'object' && v.internal instanceof Set
+      case 'Function':
+        return isRef(v) && (v.kind === 'function' || v.kind === 'builtin')
+      case 'Future':
+        return isRef(v) && v.kind === 'promise'
+    }
+    if (isRef(v) && v.kind === 'object' && v.isError) {
+      const d = toStr(v.props.get('__dart') ?? v.props.get('name'))
+      if (t === 'Exception') return EXC.includes(d)
+      if (t === 'Error') return !EXC.includes(d)
+      return d === t
+    }
+    const c = this.global.vars.get(t)?.value
+    if (isRef(c) && c.kind === 'class' && isRef(v) && v.kind === 'object') {
+      for (let p = v.proto; p; p = p.proto) if (p === c.proto) return true
+    }
+    return false
+  }
+
+  private dartBinop(op: string, l: Value, r: Value, line: number): Value | typeof NOPE {
+    const isNum = (x: Value) => typeof x === 'number'
+    const nul = (x: Value) => x === null || x === undefined
+    if ((op === '+' || op === '-' || op === '*' || op === '/' || op === '%' || op === '<' || op === '>' || op === '<=' || op === '>=') && (nul(l) || nul(r))) {
+      return this.throwError('NoSuchMethodError', `The method '${op}' was called on null (w Darcie z null safety to błąd kompilacji)`, line)
+    }
+    switch (op) {
+      case '+':
+        if (typeof l === 'string' && typeof r === 'string') return l + r
+        if (isRef(l) && l.kind === 'array' && isRef(r) && r.kind === 'array') return this.newArray([...l.items, ...r.items])
+        if (typeof l === 'string' || typeof r === 'string') {
+          return this.throwError('TypeError', `Dart nie łączy ${this.dartType(l)} z ${this.dartType(r)} przez +. Użyj interpolacji '$x' albo .toString() (w Darcie to błąd kompilacji)`, line)
+        }
+        break
+      case '*':
+        if (typeof l === 'string' && isNum(r)) return l.repeat(Math.max(0, r as number))
+        break
+      case '%':
+        if (isNum(l) && isNum(r)) {
+          const m = (l as number) % (r as number)
+          if (m < 0) this.note(`% w Darcie daje wynik nieujemny: ${l} % ${r} → ${m + Math.abs(r as number)} (w JS byłoby ${m})`)
+          return m < 0 ? m + Math.abs(r as number) : m
+        }
+        break
+      case '/':
+        if (isNum(l) && isNum(r) && Number.isInteger((l as number) / (r as number))) this.note(`/ w Darcie zawsze daje double: ${l} / ${r} → ${(l as number) / (r as number)}.0`)
+        break
+      case '<':
+      case '>':
+      case '<=':
+      case '>=':
+        if (!(isNum(l) && isNum(r))) {
+          return this.throwError('NoSuchMethodError', `${this.dartType(l)} nie ma operatora ${op}${typeof l === 'string' ? ' (porównuj napisy przez a.compareTo(b))' : ''} (w Darcie to błąd kompilacji)`, line)
+        }
+        break
+    }
+    return NOPE
   }
 
   private runTask(f: Value, args: Value[] = []): void {

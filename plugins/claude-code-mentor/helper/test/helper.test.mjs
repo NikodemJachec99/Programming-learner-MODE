@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 import { executeBatch, WIPE_CONFIRM } from '../ops.mjs';
-import { MIGRATIONS, SCHEMA_VERSION, migrate, openDatabase } from '../db.mjs';
+import { MIGRATIONS, SCHEMA_VERSION, defaultDataDir, migrate, openDatabase } from '../db.mjs';
 import * as M from '../mastery.mjs';
 
 const HELPER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -672,4 +672,21 @@ test('12. backups: keep-N pruning and once-per-day claim', (t) => {
   assert.ok(d1.path && fs.existsSync(d1.path));
   assert.equal(one(dir, 'maybeDailyBackup', { now: T0 + 3600_000 }).path, null);
   assert.ok(one(dir, 'maybeDailyBackup', { now: T0 + DAY }).path);
+});
+
+test('13. default data dir follows the platform and CLAUDE_CODE_MENTOR_DATA overrides it', () => {
+  const saved = process.env.CLAUDE_CODE_MENTOR_DATA;
+  try {
+    delete process.env.CLAUDE_CODE_MENTOR_DATA;
+    const dir = defaultDataDir();
+    assert.equal(path.basename(dir), 'ClaudeCodeMentor');
+    if (process.platform === 'darwin') assert.equal(dir, path.join(os.homedir(), 'Library', 'Application Support', 'ClaudeCodeMentor'));
+    else if (process.platform === 'win32') assert.match(dir, /AppData[\\/]Local[\\/]ClaudeCodeMentor$/i);
+    else assert.equal(dir, path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'ClaudeCodeMentor'));
+    process.env.CLAUDE_CODE_MENTOR_DATA = path.join(os.tmpdir(), 'mentor-custom');
+    assert.equal(defaultDataDir(), path.join(os.tmpdir(), 'mentor-custom'));
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CODE_MENTOR_DATA;
+    else process.env.CLAUDE_CODE_MENTOR_DATA = saved;
+  }
 });

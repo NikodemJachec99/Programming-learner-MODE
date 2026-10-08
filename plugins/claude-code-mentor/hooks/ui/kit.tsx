@@ -26,6 +26,7 @@ export const AREA_NAMES: Record<string, string> = {
   security: 'Bezpieczeństwo',
   devops: 'Docker i wdrażanie',
   ai: 'AI, LLM i agenci',
+  mobile: 'Flutter i aplikacje mobilne',
 }
 
 export const AREA_COLORS: Record<string, string> = {
@@ -47,6 +48,7 @@ export const AREA_COLORS: Record<string, string> = {
   security: 'error',
   devops: 'ide',
   ai: 'planMode',
+  mobile: 'autoAccept',
 }
 
 export const LEVEL_THEME = ['inactive', 'suggestion', 'permission', 'warning', 'success']

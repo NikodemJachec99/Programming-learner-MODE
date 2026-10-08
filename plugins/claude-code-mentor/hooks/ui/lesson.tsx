@@ -109,7 +109,7 @@ export async function renderLesson(io: Host, k: Kit): Promise<RenderElement> {
   const b = lesson.body
   const main = lesson.conceptIds[0] ? conceptById(lesson.conceptIds[0]) : undefined
   const accent = (main && AREA_COLORS[main.area]) ?? 'claude'
-  const isJs = b.lang === 'js' || b.lang === 'ts'
+  const isJs = b.lang === 'js' || b.lang === 'ts' || b.lang === 'dart'
   const open = new Set(view.openSections)
   const toggle = (key: string) => () =>
     io.set(S.view, v => ({ ...v, openSections: v.openSections.includes(key) ? v.openSections.filter(x => x !== key) : [...v.openSections, key] }))
@@ -135,7 +135,7 @@ export async function renderLesson(io: Host, k: Kit): Promise<RenderElement> {
             Sprawdź, czy rozumiem
           </Button>
           {isJs && b.snippet && (
-            <Button key="l-sim" plain dimColor onPress={() => loadSim(io, b.snippet, `lekcja: ${lesson.title}`)}>
+            <Button key="l-sim" plain dimColor onPress={() => loadSim(io, b.snippet, `lekcja: ${lesson.title}`, b.lang)}>
               Symuluj
             </Button>
           )}

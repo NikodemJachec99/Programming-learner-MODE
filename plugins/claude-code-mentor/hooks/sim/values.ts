@@ -21,7 +21,7 @@ export type JsObject = {
   /** Magazyn Map/Set (klucze porównywane jak SameValueZero). */
   internal?: Map<Value, Value> | Set<Value>
 }
-export type JsArray = { kind: 'array'; id: number; items: Value[] }
+export type JsArray = { kind: 'array'; id: number; items: Value[]; lazy?: boolean }
 export type JsFunction = {
   kind: 'function'
   id: number

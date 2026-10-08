@@ -1,11 +1,11 @@
 // Eksplorator warunków: jeden operator porównania, dwie wartości,
-// semantyka konkretnego języka (JavaScript, Python 3, PHP 8).
+// semantyka konkretnego języka (JavaScript, Python 3, PHP 8, Dart 3).
 // Służy do pokazania przypadków brzegowych i konwersji typów.
 
 import { compare, display, looseEquals, strictEquals } from './values'
 import type { Value } from './values'
 
-export type CondLang = 'js' | 'py' | 'php'
+export type CondLang = 'js' | 'py' | 'php' | 'dart'
 
 export type Lit =
   | { t: 'num'; v: number }
@@ -18,9 +18,10 @@ export const COND_OPS: Record<CondLang, string[]> = {
   js: ['<', '<=', '>', '>=', '==', '===', '!=', '!=='],
   py: ['<', '<=', '>', '>=', '==', '!='],
   php: ['<', '<=', '>', '>=', '==', '===', '!=', '!=='],
+  dart: ['<', '<=', '>', '>=', '==', '!='],
 }
 
-export const LANG_NAMES: Record<CondLang, string> = { js: 'JavaScript / TypeScript', py: 'Python 3', php: 'PHP 8' }
+export const LANG_NAMES: Record<CondLang, string> = { js: 'JavaScript / TypeScript', py: 'Python 3', php: 'PHP 8', dart: 'Dart 3' }
 
 /** Parsuje literał wpisany przez użytkownika: 7, -1.5, "7", 'a', true, null, None, undefined. */
 export function parseLiteral(text: string, lang: CondLang): Lit | { error: string } {
@@ -65,6 +66,8 @@ export function evalCond(lang: CondLang, op: string, a: Lit, b: Lit): CondResult
       return evalPy(op, a, b)
     case 'php':
       return evalPhp(op, a, b)
+    case 'dart':
+      return evalDart(op, a, b)
   }
 }
 
@@ -207,6 +210,40 @@ function evalPhp(op: string, a: Lit, b: Lit): CondResult {
   const value = op === '==' ? c === 0 : op === '!=' ? c !== 0 : cmp(op, c, 0)
   notes.push(`${showLit(a, 'php')} ${op} ${showLit(b, 'php')} → ${value}`)
   return { value, notes }
+}
+
+function dartType(l: Lit): string {
+  return l.t === 'num' ? (Number.isInteger(l.v) ? 'int' : 'double') : l.t === 'str' ? 'String' : l.t === 'bool' ? 'bool' : 'Null'
+}
+
+function evalDart(op: string, a: Lit, b: Lit): CondResult {
+  const notes: string[] = []
+  if (op === '==' || op === '!=') {
+    let eq: boolean
+    if (a.t === 'num' && b.t === 'num') {
+      eq = a.v === b.v
+      if (Number.isInteger(a.v) !== Number.isInteger(b.v)) notes.push('int i double porównywane liczbowo: 1 == 1.0 daje true')
+    } else if (a.t === b.t) eq = a.t === 'null' || (a as { v: unknown }).v === (b as { v: unknown }).v
+    else {
+      eq = false
+      notes.push(`różne typy (${dartType(a)} i ${dartType(b)}): == w Darcie nie konwertuje typów, "7" == 7 to false (analizator ostrzeże o porównaniu niezwiązanych typów)`)
+    }
+    const value = op === '==' ? eq : !eq
+    notes.push(`${showLit(a, 'dart')} ${op} ${showLit(b, 'dart')} → ${value}`)
+    return { value, notes }
+  }
+  if (a.t === 'num' && b.t === 'num') {
+    const value = cmp(op, a.v, b.v)
+    notes.push(`${showLit(a, 'dart')} ${op} ${showLit(b, 'dart')} → ${value}`)
+    return { value, notes }
+  }
+  if (a.t === 'null' || b.t === 'null') {
+    return { value: null, error: `Błąd kompilacji: operator '${op}' nie działa na wartości, która może być null`, notes: ['null safety: najpierw sprawdź x != null albo użyj x ?? 0'] }
+  }
+  if (a.t === 'str' && b.t === 'str') {
+    return { value: null, error: `Błąd kompilacji: String nie ma operatora '${op}'`, notes: ['napisy porównuje się przez a.compareTo(b), które zwraca liczbę ujemną, 0 albo dodatnią'] }
+  }
+  return { value: null, error: `Błąd kompilacji: nie można porównać ${dartType(a)} i ${dartType(b)} operatorem '${op}'`, notes: ['Dart nie konwertuje typów: zamień napis na liczbę przez int.parse albo num.parse'] }
 }
 
 function cmp(op: string, x: number | string, y: number | string): boolean {

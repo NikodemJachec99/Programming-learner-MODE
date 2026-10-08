@@ -94,8 +94,8 @@ export class Mentor {
     this.projectRoot = root
     this.projectId = 'p_' + hash(norm(root))
     const name = root.split(/[\\/]/).filter(Boolean).pop() ?? root
-    const local = (await io.localAppData()) ?? ''
-    const dataDir = local ? joinPath(local, 'ClaudeCodeMentor') : ''
+    const dataDir = (await io.dataDir()) ?? ''
+    const posix = dataDir.startsWith('/')
     const engine = await io.version().catch(() => '?')
     // Kandydaci na node.exe: z instalatora (prawdziwa ścieżka przed linkami nvm),
     // potem typowe lokalizacje. Bierzemy pierwszego, który faktycznie się uruchamia:
@@ -109,9 +109,10 @@ export class Mentor {
         messages.push('Brak runtime.json (tworzy go instalator): szukam node w typowych miejscach.')
       }
     } else {
-      messages.push('Brak zmiennej LOCALAPPDATA: nie wiem, gdzie trzymać bazę.')
+      messages.push('Brak LOCALAPPDATA i HOME: nie wiem, gdzie trzymać bazę.')
     }
-    candidates.push('C:\\Program Files\\nodejs\\node.exe', 'node')
+    if (posix) candidates.push('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node', 'node')
+    else candidates.push('C:\\Program Files\\nodejs\\node.exe', 'node')
     let node = 'node'
     const tried: string[] = []
     for (const c of [...new Set(candidates)]) {

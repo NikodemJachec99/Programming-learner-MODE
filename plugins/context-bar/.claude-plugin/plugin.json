@@ -5,7 +5,7 @@
   "author": { "name": "Nikodem Jachec", "url": "https://github.com/NikodemJachec99" },
   "homepage": "https://github.com/NikodemJachec99/Programming-learner-MODE",
   "repository": "https://github.com/NikodemJachec99/Programming-learner-MODE",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "keywords": ["context", "tokens", "prompt-cache", "statusbar"],
   "types": "./types/index.d.ts"
 }
