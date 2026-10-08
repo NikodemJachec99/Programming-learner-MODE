@@ -21,7 +21,7 @@ import { Breaker, COST_PROFILES, estimateTokens, MANUAL_LIMIT, MIN_GAP_MS, today
 import { classifyCommand, detectConcepts, isConfigFile, newSymbols } from './engine/detect'
 import { factsFromContent, factsFromPatch, langOf } from './engine/diff'
 import type { ChangeFacts, Hunk } from './engine/diff'
-import { missingPrereqs } from './engine/graph'
+import { depthMap, missingPrereqs } from './engine/graph'
 import { hash, makeId } from './engine/hash'
 import { builtinLesson, extractJson, lessonRequest, levelName, mergeModelLesson } from './engine/lessons'
 import type { LessonInput } from './engine/lessons'
@@ -37,6 +37,7 @@ type Detail = { snippet: string; start: number; lang: string; unified: string; f
 type Job = { id: string; kind: 'auto' | 'manual'; conceptId: string; obsId: string; deep: boolean; task: string | null; note: string | null; at: number }
 
 const BY_ID = new Map<string, ConceptDef>(CONCEPTS.map(c => [c.id, c]))
+const DEPTH = depthMap(CONCEPTS)
 export const conceptById = (id: string): ConceptDef | undefined => BY_ID.get(id)
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -274,7 +275,8 @@ export class Mentor {
   }
 
   private rel(path: string): string {
-    const r = norm(this.projectRoot)
+    // Bez końcowego ukośnika, inaczej katalog główny dysku (C:\) nigdy nie pasuje.
+    const r = norm(this.projectRoot).replace(/\/+$/, '')
     const p = path.replace(/\\/g, '/')
     return norm(p).startsWith(r + '/') ? p.slice(r.length + 1) : p
   }
@@ -396,7 +398,8 @@ export class Mentor {
         if (o.kind === 'fix' || o.kind === 'error') score *= 1.4
         if (this.taught.has(id)) score *= 0.15
         if ((k?.level ?? 0) >= 4 && !k?.due) score *= 0.1
-        if (o.concepts.indexOf(id) === 0) score *= 1.1
+        // Konkretniejsze pojęcie (głębiej w grafie zależności) mówi o zmianie więcej niż ogólne.
+        score *= 1 + 0.12 * (DEPTH.get(id) ?? 0)
         if (!best || score > best.score) best = { o, c, score }
       }
     }

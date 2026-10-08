@@ -10,7 +10,7 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 
 | Zestaw | Wynik |
 |---|---|
-| Testy pluginu (symulator, silnik, prywatność, UI desktop i terminal, hooki) | 27 / 27 |
+| Testy pluginu (symulator, silnik, prywatność, UI desktop i terminal, hooki) | 29 / 29 |
 | Helper bazy (migracje, model opanowania, współbieżność 8 procesów, eksport i import) | 15 / 15 |
 | Piaskownica SQL | 5 / 5 |
 | Walidacja marketplace i obu pluginów | ✔ |

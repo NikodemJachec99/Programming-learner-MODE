@@ -8,9 +8,9 @@ export type CostProfile = { autoCallsPerDay: number; tokensPerDay: number; maxTo
 
 export const COST_PROFILES: Record<MentorCost, CostProfile> = {
   off: { autoCallsPerDay: 0, tokensPerDay: 0, maxTokensPerLesson: 0, label: 'Wyłączone: tylko lekcje wbudowane, bez wywołań modelu' },
-  saver: { autoCallsPerDay: 8, tokensPerDay: 40000, maxTokensPerLesson: 1400, label: 'Oszczędny: do 8 automatycznych lekcji AI dziennie' },
-  balanced: { autoCallsPerDay: 25, tokensPerDay: 150000, maxTokensPerLesson: 2200, label: 'Zrównoważony: do 25 lekcji AI dziennie' },
-  generous: { autoCallsPerDay: 60, tokensPerDay: 400000, maxTokensPerLesson: 3200, label: 'Hojny: do 60 lekcji AI dziennie' },
+  saver: { autoCallsPerDay: 8, tokensPerDay: 40000, maxTokensPerLesson: 2500, label: 'Oszczędny: do 8 automatycznych lekcji AI dziennie' },
+  balanced: { autoCallsPerDay: 25, tokensPerDay: 150000, maxTokensPerLesson: 4000, label: 'Zrównoważony: do 25 lekcji AI dziennie' },
+  generous: { autoCallsPerDay: 60, tokensPerDay: 400000, maxTokensPerLesson: 6000, label: 'Hojny: do 60 lekcji AI dziennie' },
 }
 
 /** Ręczne prośby (przycisk, /mentor explain) mają osobny, wyższy limit. */

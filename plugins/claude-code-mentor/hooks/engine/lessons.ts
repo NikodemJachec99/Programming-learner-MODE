@@ -146,7 +146,12 @@ export function lessonRequest(i: LessonInput, sendCode: boolean): { system: stri
   const levels = Object.entries(i.levelsByConcept)
     .map(([id, l]) => `${id}: ${levelName(l)}`)
     .join(', ')
-  const depth = i.deep || i.settings.detail === 'deep' ? 'bardzo szczegółowo' : i.settings.detail === 'short' ? 'krótko (każde pole 1-3 zdania)' : 'normalnie (każde pole 2-6 zdań)'
+  const depth =
+    i.deep || i.settings.detail === 'deep'
+      ? 'szczegółowo, ale każde pole najwyżej ~900 znaków, cała odpowiedź do ~4500 tokenów'
+      : i.settings.detail === 'short'
+        ? 'krótko: każde pole 1-2 zdania, cała odpowiedź do ~1500 tokenów'
+        : 'zwięźle: każde pole 1-4 zdania (najwyżej ~450 znaków), mechanism do 6 kroków, cała odpowiedź do ~2500 tokenów'
   const system = [
     'Jesteś nauczycielem programowania dla początkującego programisty, który pracuje nad prawdziwymi projektami z pomocą Claude Code.',
     'Piszesz po polsku. Terminy techniczne podawaj też po angielsku w nawiasie lub w `backtickach`.',
@@ -186,16 +191,65 @@ function numbered(text: string, start: number): string {
     .join('\n')
 }
 
-export function extractJson(text: string): Record<string, unknown> | null {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start < 0 || end <= start) return null
-  try {
-    const v = JSON.parse(text.slice(start, end + 1)) as unknown
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
-  } catch {
-    return null
+const asObject = (v: unknown): Record<string, unknown> | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
+
+/**
+ * Wyciąga obiekt JSON z odpowiedzi modelu. Gdy odpowiedź ucięto na limicie tokenów,
+ * zostawia pola zakończone w całości (cięcie po ostatnim kompletnym `",` / `"],`) i zamyka obiekt.
+ */
+/** Surowe znaki nowej linii i tabulacji wewnątrz napisów JSON (modele czasem je wstawiają) zamienia na escape. */
+function escapeControlInStrings(s: string): string {
+  let out = ''
+  let inString = false
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!
+    if (inString) {
+      if (ch === '\\') {
+        out += ch + (s[i + 1] ?? '')
+        i++
+        continue
+      }
+      if (ch === '"') inString = false
+      else if (ch === '\n') {
+        out += '\\n'
+        continue
+      } else if (ch === '\r') continue
+      else if (ch === '\t') {
+        out += '\\t'
+        continue
+      }
+    } else if (ch === '"') inString = true
+    out += ch
   }
+  return out
+}
+
+export function extractJson(raw: string): Record<string, unknown> | null {
+  const text = escapeControlInStrings(raw)
+  const start = text.indexOf('{')
+  if (start < 0) return null
+  const end = text.lastIndexOf('}')
+  if (end > start) {
+    try {
+      const v = asObject(JSON.parse(text.slice(start, end + 1)))
+      if (v) return v
+    } catch {
+      /* ucięta odpowiedź: próbujemy naprawić niżej */
+    }
+  }
+  const body = text.slice(start)
+  const cuts: number[] = []
+  const re = /("|\]|null|true|false|\d)\s*,\s*"/g
+  for (let m = re.exec(body); m; m = re.exec(body)) cuts.push(m.index + m[1]!.length)
+  for (const cut of cuts.reverse().slice(0, 40)) {
+    try {
+      const v = asObject(JSON.parse(body.slice(0, cut) + '}'))
+      if (v) return v
+    } catch {
+      /* następne cięcie */
+    }
+  }
+  return null
 }
 
 const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : Array.isArray(v) ? v.filter(x => typeof x === 'string').join('\n') : fallback)

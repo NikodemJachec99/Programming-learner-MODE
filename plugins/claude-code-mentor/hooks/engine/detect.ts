@@ -24,7 +24,8 @@ const RULES: Rule[] = [
   { id: 'strings', re: /`[^`]*\$\{|f["'][^"']*\{|\.(split|trim|replace|toUpperCase|toLowerCase|substring|padStart)\(/ },
   { id: 'null-undefined', langs: [...JS, 'php', 'py'], re: /\?\?|\?\.|\b(null|undefined|None)\b/ },
   { id: 'type-coercion', langs: JS, re: /\b(Number|String|Boolean|parseInt|parseFloat)\(|[^=!]==[^=]|!!\w/ },
-  { id: 'recursion', re: /\bfunction\s+(\w+)[^]*?\b\1\s*\(/ },
+  // Rekurencja: wywołanie własnej nazwy w ciele tej samej funkcji (przed kolejną deklaracją funkcji).
+  { id: 'recursion', re: /\bfunction\s+(\w+)\s*(?:<[^>]*>)?\([^)]*\)[^{]*\{(?:(?!\bfunction\b|\n\}).)*?\b\1\s*\(/s },
   // struktury danych
   { id: 'arrays', re: /\[[^\]]*,[^\]]*\]|\.(push|pop|map|filter|reduce|find|some|every|slice|splice|includes)\(|\barray_\w+\(|\bappend\(/ },
   { id: 'objects-maps', re: /\{\s*[\w"']+\s*:|\bnew Map\(|\bdict\(|\[\s*['"]\w+['"]\s*=>/ },

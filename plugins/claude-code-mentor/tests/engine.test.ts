@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { isSensitivePath, redact, safeSnippet } from '../hooks/engine/redact'
 import { classifyCommand, detectConcepts, newSymbols } from '../hooks/engine/detect'
 import { factsFromPatch } from '../hooks/engine/diff'
-import { builtinLesson, lessonRequest } from '../hooks/engine/lessons'
+import { builtinLesson, extractJson, lessonRequest } from '../hooks/engine/lessons'
 import { boundaryQuestion, gradeChoice, parseGrade, predictOutputQuestion } from '../hooks/engine/quiz'
 import { CONCEPTS } from '../hooks/content/concepts'
 import { missingPrereqs, recommend } from '../hooks/engine/graph'
@@ -153,4 +153,22 @@ test('C: pliki niebędące kodem nie dają fałszywych pojęć', async () => {
   expect(classifyCommand('git grep -n foo').kind).toBe('bash')
   expect(classifyCommand('git status').kind).toBe('bash')
   expect(classifyCommand('git commit -m "x"').kind).toBe('git')
+})
+
+test('D: lekcja z uciętej odpowiedzi modelu (limit tokenów) nie przepada', async () => {
+
+  const cut = '```json\n{\n  "title": "Async/await w checkout",\n  "observed": "Nowy plik checkout.ts",\n  "mechanism": "1. Funkcja async zwraca Promise.\n2. await zawiesza",\n  "why": "Bo fetch trwa'
+  const j = extractJson(cut)
+  expect(j?.title).toBe('Async/await w checkout')
+  expect(j?.mechanism).toMatch(/await zawiesza/)
+  expect(j?.why).toBe(undefined)
+  expect(extractJson('{"a": "ok"}')?.a).toBe('ok')
+  expect(extractJson('brak json')).toBe(null)
+})
+
+test('C: rekurencja tylko przy wywołaniu w ciele tej samej funkcji', async () => {
+  const notRec = lines('async function fetchOrder(id: string) {\n  return fetch(id)\n}\n\nexport async function loadOrders(ids: string[]) {\n  return Promise.all(ids.map(id => fetchOrder(id)))\n}')
+  expect(detectConcepts('ts', notRec).map(h => h.id)).not.toContain('recursion')
+  const rec = lines('function fact(n: number): number {\n  if (n <= 1) return 1\n  return n * fact(n - 1)\n}')
+  expect(detectConcepts('ts', rec).map(h => h.id)).toContain('recursion')
 })
