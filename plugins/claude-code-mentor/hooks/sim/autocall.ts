@@ -94,6 +94,44 @@ export function autoCall(src: string, dialect: 'js' | 'dart'): AutoCall | null {
   return { call: `${print}(${pick.isAsync ? 'await ' : ''}${expr})`, label: expr, name: pick.name }
 }
 
+const BUILTIN_CALLS = new Set(['console', 'log', 'print', 'await', 'JSON', 'stringify', 'Math', 'String', 'Number', 'Promise', 'Object', 'Array'])
+
+/** Czy fragment definiuje funkcję (albo klasę) o tej nazwie. */
+export function definesName(src: string, name: string, dialect: 'js' | 'dart'): boolean {
+  if (findFunctions(src, dialect).some(f => f.name === name)) return true
+  const n = name.replace(/[$]/g, '\\$')
+  return new RegExp(`\\b(?:class|function)\\s+${n}\\b|\\b(?:const|let|var|final)\\s+${n}\\s*=`).test(src)
+}
+
+export type PairCall = { call: string | null; label: string | null; problem: string | null }
+
+/**
+ * Jedno wywołanie dla A i B, żeby porównanie miało sens. Bierze wpisane albo automatyczne
+ * (najpierw z B, potem z A), ale tylko takie, którego funkcje istnieją w obu wersjach.
+ * Gdy takiego nie ma, oddaje `problem` zamiast porównywać błąd ustawienia testu.
+ */
+export function pairCall(a: string, b: string, dialect: 'js' | 'dart', typed = ''): PairCall {
+  const okIn = (call: string) => {
+    const names = [...call.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]!).filter(x => !BUILTIN_CALLS.has(x))
+    return names.filter(x => !definesName(a, x, dialect) || !definesName(b, x, dialect))
+  }
+  const t = typed.trim()
+  if (t && looksLikeCall(t)) {
+    const missing = okIn(t)
+    return missing.length ? { call: null, label: t, problem: `\`${missing[0]}\` nie istnieje w obu wersjach, więc to wywołanie nie sprawdzi A i B na tych samych danych.` } : { call: t, label: t, problem: null }
+  }
+  const ab = autoCall(b, dialect)
+  const aa = autoCall(a, dialect)
+  if (!ab && !aa) return { call: null, label: null, problem: null }
+  const pick = [ab, aa].find((c): c is AutoCall => !!c && !okIn(c.call).length)
+  if (pick) return { call: pick.call, label: pick.label, problem: null }
+  return {
+    call: null,
+    label: null,
+    problem: `A i B nie mają wspólnej funkcji do uruchomienia (${aa?.name ?? 'brak'} i ${ab?.name ?? 'brak'}), więc porównanie byłoby porównaniem błędów, a nie działania. Wpisz wywołanie, które działa w obu wersjach.`,
+  }
+}
+
 /** Czy tekst wpisany jako wywołanie wygląda na wywołanie albo instrukcję (a nie np. samą nazwę). */
 export function looksLikeCall(text: string): boolean {
   const t = text.trim()

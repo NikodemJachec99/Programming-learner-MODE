@@ -60,6 +60,11 @@ export type SimResult = {
   output: string[]
   error?: { kind: 'syntax' | 'runtime' | 'limit' | 'unsupported'; message: string; line?: number }
   hypotheses: string[]
+  /**
+   * Czy wynik zależy od założenia symulatora (zaślepka za brakującą nazwę, fetch, losowość, zegar).
+   * Same uwagi informacyjne (np. o setTimeout 0) tego nie ustawiają.
+   */
+  assumed: boolean
   lines: string[]
   executedLines: number[]
   skipped: { from: number; to: number; reason: string }[]
@@ -119,7 +124,7 @@ export function simulate(source: string, opts: SimOptions = {}): SimResult {
 }
 
 function emptyResult(lines: string[], error: SimResult['error']): SimResult {
-  return { ok: false, steps: [], output: [], error, hypotheses: [], lines, executedLines: [], skipped: [], conditions: [], loops: [], finalVars: {} }
+  return { ok: false, steps: [], output: [], error, hypotheses: [], assumed: false, lines, executedLines: [], skipped: [], conditions: [], loops: [], finalVars: {} }
 }
 
 class Interpreter {
@@ -133,6 +138,7 @@ class Interpreter {
   private nextId = 1
   private frameSeq = 0
   private hypotheses = new Set<string>()
+  private assumed = false
   private executed = new Set<number>()
   private skipped: SimResult['skipped'] = []
   private conditions = new Map<number, { key: number; line: number; expr: string; results: boolean[] }>()
@@ -201,6 +207,7 @@ class Interpreter {
       output: this.out,
       error,
       hypotheses: [...this.hypotheses],
+      assumed: this.assumed || this.stubbed.size > 0 || this.steps.some(x => x.hypothetical),
       lines: this.lines,
       executedLines: [...this.executed].sort((a, b) => a - b),
       skipped: this.skipped,
@@ -1813,6 +1820,7 @@ class Interpreter {
     mf('sign', Math.sign)
     math.props.set('PI', Math.PI)
     math.props.set('random', this.fnBuiltin('Math.random', () => {
+      self.assumed = true
       self.hypotheses.add('Math.random() zwraca w symulatorze stały, powtarzalny ciąg liczb pseudolosowych. W prawdziwym programie każde uruchomienie da inne wartości.')
       self.rng = (self.rng * 1103515245 + 12345) % 2147483648
       return self.rng / 2147483648
@@ -2001,6 +2009,7 @@ class Interpreter {
     }))
     g('fetch', this.fnBuiltin('fetch', (_t, a) => {
       const url = toStr(a[0])
+      self.assumed = true
       self.hypotheses.add(`fetch(${JSON.stringify(url)}) nie wysyła prawdziwego żądania. Symulator ZAKŁADA odpowiedź 200 po 100 ms wirtualnego czasu z przykładowym JSON. W rzeczywistości czas i wynik zależą od sieci i serwera, a żądanie może się nie udać.`)
       const p = self.newPromise(`fetch(${url.length > 30 ? url.slice(0, 27) + '…' : url})`)
       self.macro.push({
@@ -2024,6 +2033,7 @@ class Interpreter {
       return p
     }))
     const dateNow = this.fnBuiltin('Date.now', () => {
+      self.assumed = true
       self.hypotheses.add('Date.now() zwraca w symulatorze wirtualny czas (start 0 ms, rośnie tylko przy timerach). Prawdziwy zegar zależy od chwili uruchomienia.')
       return self.clock
     })
@@ -2034,7 +2044,7 @@ class Interpreter {
       ['__construct', this.fnBuiltin('new Date', (_t, a) => {
         const d = self.newObject('Date')
         const t = a[0] === undefined ? self.clock : typeof a[0] === 'number' ? a[0] : Date.parse(toStr(a[0]))
-        if (a[0] === undefined) self.hypotheses.add('new Date() bez argumentu używa w symulatorze wirtualnego czasu 1970-01-01T00:00:00Z + upływ timerów.')
+        if (a[0] === undefined) (self.assumed = true), self.hypotheses.add('new Date() bez argumentu używa w symulatorze wirtualnego czasu 1970-01-01T00:00:00Z + upływ timerów.')
         d.props.set('__iso', Number.isNaN(t) ? 'Invalid Date' : new Date(t).toISOString())
         d.props.set('getTime', self.fnBuiltin('getTime', () => t))
         d.props.set('toISOString', self.fnBuiltin('toISOString', () => new Date(t).toISOString()))
@@ -2504,6 +2514,7 @@ class Interpreter {
     g('pow', F('pow', a => Math.pow(toNumber(a[0]), toNumber(a[1]))))
     g('pi', Math.PI)
     const rnd = () => {
+      self.assumed = true
       self.hypotheses.add('Random() zwraca w symulatorze stały, powtarzalny ciąg liczb. W prawdziwym programie każde uruchomienie da inne wartości.')
       self.rng = (self.rng * 1103515245 + 12345) % 2147483648
       return self.rng / 2147483648
@@ -2612,6 +2623,7 @@ class Interpreter {
       return timer(msOf(a[0]), a[1])
     }, new Map<string, Value>([['run', F('Timer.run', a => timer(0, a[0]))]])))
     g('DateTime', obj('DateTime', [['now', F('DateTime.now', () => {
+      self.assumed = true
       self.hypotheses.add('DateTime.now() zwraca w symulatorze wirtualny czas (start 1970-01-01, rośnie tylko przy timerach).')
       return obj('DateTime', [['millisecondsSinceEpoch', self.clock], ['toIso8601String', F('toIso8601String', () => new Date(self.clock).toISOString())]])
     })]]))

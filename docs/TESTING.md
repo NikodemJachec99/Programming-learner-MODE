@@ -10,7 +10,7 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 
 | Zestaw | Wynik |
 |---|---|
-| Testy pluginu (Change Lab, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 64 / 64 |
+| Testy pluginu (Change Lab, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 69 / 69 |
 | Helper bazy (migracje v1 → v2, model opanowania, współbieżność 8 procesów, eksport i import, historia zmian) | 18 / 18 |
 | Piaskownica SQL | 5 / 5 |
 | Walidacja marketplace i obu pluginów | ✔ |
@@ -48,6 +48,10 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 | Sprawdź się ze zmiany | PASS | test: pytanie o wynik po zmianie, poprawna odpowiedź policzona z pary przed/po. Bez kodu przed pytania nie ma. Dla Pythona zgadywanie zmiany |
 | Rozpoznawanie przeróbek | PASS | test: `Promise.all`, `map`, `.then` → `await`, `try`, `null`, `var`, Dart `Future.wait`. Zmiana operatora nie jest opisywana jako przeróbka |
 | Test poziomu | PASS | test: 6/6 poprawnych odpowiedzi zgodnych z tym, co wypisuje symulator. Panel: start, 6 odpowiedzi, wynik 5/6, karta znika |
+| Sekrety w opisie zmiany | PASS | test: klucz API i hasło zmienione w literale nie trafiają do opisu zmiany, listy ani obserwacji, z zapisem kodu i bez. Kontrola: bez poprawki test pada |
+| Uczciwe porównanie A i B | PASS | test: gdy A i B nie mają wspólnej funkcji albo wpisane wywołanie nie istnieje w obu, porównania nie ma, jest komunikat |
+| Laboratorium | PASS | test: A/B/C/D na 2 przypadkach, 6/6/7 i „brak `sum`” dla wersji z inną nazwą, oznaczenie różnych wyników, edycja linii, limit 4 wersji, prośba „Sprawdź w projekcie” z przewidywaniem i kodem kopii. Panel: otwarcie w Zmianach, dodanie przypadku, kopia, przejście do kroków. Dart sprawdzony ręcznie: `label(10)` dużo/mało, `async` |
+| Pytania bez założeń | PASS | test: pytanie ze zmiany nie powstaje, gdy wynik zależy od zaślepki albo `Math.random` |
 | Ustawienia i Moja wiedza | PASS | test: na wierzchu 3 ustawienia, reszta po „Zaawansowane”. Bez danych brak pustych filtrów poziomów |
 | Aktualizacja bazy v1 → v2 | PASS | test: dane z v1 bez zmian po migracji, kopia przed migracją |
 | Flutter i Dart | PASS | test: wynik symulatora Darta zgodny z Dartem (`~/`, `%`, null safety, Future), drzewo widgetów, pojęcia Fluttera w kodzie ekranu, komendy `flutter` |

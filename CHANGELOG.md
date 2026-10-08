@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.4.0
+
+### Laboratorium w Zmianach
+
+- „▶ Uruchom i porównaj” otwiera laboratorium pod kodem zmiany zamiast przenosić do Symulatora.
+- Wersje A (przed), B (po), alternatywy od modelu i własne kopie, najwyżej 4. Kopie edytujesz linia po linii, kod z narzędzia zostaje nietknięty.
+- Jawne przypadki (do 6) puszczone przez wszystkie wersje. Wiersz z różnymi wynikami jest oznaczony, brak funkcji w wersji nie udaje wyniku, wynik oparty na założeniu ma znak ≈.
+- „Sprawdź w projekcie” wstawia prośbę do Claude o uruchomienie prawdziwych testów z tymi przypadkami i porównanie z przewidywaniem. Mentor sam niczego z projektu nie uruchamia.
+- Alternatywa: „Dodaj do laboratorium” zamiast osobnego porównania w Symulatorze.
+
+### Poprawki
+
+- Opis zmiany powstaje z linii po usunięciu sekretów, więc klucz albo hasło zmienione w literale nie trafia do bazy ani panelu, także przy wyłączonym zapisie kodu. Opisy zapisane wcześniej zostają w bazie, czyszczenie ich nie jest częścią tej wersji.
+- Porównanie A i B uruchamia tylko wywołanie, którego funkcje istnieją w obu wersjach. Gdy takiego nie ma, panel to mówi zamiast porównywać błędy. Przy wyniku opartym na założeniach (zaślepki, sieć, losowość, zegar) jest ostrzeżenie.
+- „Sprawdź się” ze zmiany nie robi ocenianego pytania, gdy wynik zależy od założenia symulatora.
+- „Poproś Claude o to” przekazuje pełny kod wybranej alternatywy, ograniczenia (ta sama sygnatura, bez ruszania innych plików) i sposób sprawdzenia. Model dostaje polecenie, żeby alternatywa miała tę samą nazwę i parametry.
+- CI uruchamia testy pluginu i walidację marketplace.
+
 ## 1.3.0
 
 ### Jeden mod

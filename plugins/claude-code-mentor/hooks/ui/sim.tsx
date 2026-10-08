@@ -13,7 +13,7 @@ import { COND_OPS, LANG_NAMES, boundaryTable, evalCond, parseLiteral, showLit } 
 import type { CondLang } from '../sim/conditions'
 import { explainStep, whyStep } from '../sim/explain'
 import { OP_GROUPS, applyEdits, boundaryNote, compareRuns } from '../sim/variants'
-import { autoCall, looksLikeCall } from '../sim/autocall'
+import { autoCall, looksLikeCall, pairCall } from '../sim/autocall'
 import { card, md, muted, section } from './kit'
 import type { Kit } from './kit'
 import { DEFAULT_SIM, S } from './state'
@@ -43,10 +43,14 @@ export async function loadSim(io: Host, source: string, origin: string, lang?: s
 /** Kod do wykonania: wariant, a do tego wywołanie (wpisane albo dobrane automatycznie). */
 function program(s: MentorSimState, variant: 'A' | 'B'): string {
   const base = s.pair ? (variant === 'A' ? s.pair.a : s.pair.b) : variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source
+  // para: jedno wywołanie, które istnieje w A i w B, inaczej żadne
+  if (s.pair) {
+    const pc = pairCall(s.pair.a, s.pair.b, s.dialect ?? 'js', s.callArgs)
+    return pc.call ? `${base}\n${pc.call}` : base
+  }
   const call = s.callArgs.trim()
   if (call && looksLikeCall(call)) return `${base}\n${call}`
-  // jedno wywołanie dla obu wersji, żeby A i B dostały te same dane
-  const ac = autoCall(s.pair ? s.pair.b : base, s.dialect ?? 'js')
+  const ac = autoCall(base, s.dialect ?? 'js')
   return ac ? `${base}\n${ac.call}` : base
 }
 
@@ -128,7 +132,8 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
   const seen = new Set(r.steps.slice(0, cursor + 1).map(x => x.line))
   const width = Math.max(20, k.cols - 8)
   const typed = s.callArgs.trim()
-  const auto = autoCall(pair ? pair.b : s.source, dialect)
+  const pc = pair ? pairCall(pair.a, pair.b, dialect, typed) : null
+  const auto = pair ? (pc?.call && !typed ? { label: pc.label! } : null) : autoCall(s.source, dialect)
   const badCall = !!typed && !looksLikeCall(typed)
   const codeLines = (pair ? (variant === 'A' ? pair.a : pair.b) : variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source).split('\n').length
 
@@ -153,11 +158,19 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
   if (r.error?.kind === 'syntax') {
     panel = card(k, 'error', <Text color="error" wrap="wrap">{`Nie umiem wykonać tego kodu: ${r.error.message}${r.error.line ? ` (linia ${r.error.line})` : ''}`}</Text>, muted(k, dialect === 'dart' ? 'Obsługiwany podzbiór Darta: zmienne, null safety, if/switch, pętle, funkcje, klasy, wyjątki, kolekcje, Future, async/await. Bez Fluttera, Streamów i kaskad (..).' : 'Obsługiwany podzbiór JS/TS: zmienne, operatory, if/switch, pętle, funkcje, klasy, wyjątki, tablice, obiekty, Map/Set, Promise, async/await, setTimeout.'))
   } else if (step) {
-    if (s.panel === 'compare' && (pair || s.edits.length)) {
+    if (s.panel === 'compare' && pc?.problem) {
+      panel = card(k, 'warning', <Text bold>Tego porównania nie da się zrobić uczciwie</Text>, <Text wrap="wrap">{pc.problem}</Text>)
+    } else if (s.panel === 'compare' && (pair || s.edits.length)) {
       const a = simulateCached(program(s, 'A'), dialect)
       const b = simulateCached(program(s, 'B'), dialect)
       const cmp = compareRuns(a, b, pair ? [] : s.edits.map(e => ({ before: e.before, after: e.text, line: e.line })))
-      panel = card(k, 'warning', <Text bold>{pair ? `A (${pair.aLabel}) i B (${pair.bLabel}) na tych samych danych` : 'A (oryginał) i B (zmieniony)'}</Text>, ...cmp.lines.map(t => md(k, t)))
+      panel = card(
+        k,
+        'warning',
+        <Text bold>{pair ? `A (${pair.aLabel}) i B (${pair.bLabel}) na tych samych danych` : 'A (oryginał) i B (zmieniony)'}</Text>,
+        ...cmp.lines.map(t => md(k, t)),
+        (a.assumed || b.assumed) && <Text color="warning" wrap="wrap">Część wyniku opiera się na założeniach symulatora (zaślepki, sieć, losowość albo zegar). Różnica może nie wystąpić w prawdziwym programie.</Text>,
+      )
     } else {
       const vars = Object.entries(step.vars).filter(([, v]) => !v.startsWith('[Function') && !v.startsWith('[class') && !v.startsWith('‹'))
       const why = whyStep(step, r).replace(/^Dlaczego ten krok: /, '')
@@ -208,6 +221,7 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
       )}
       {codeView}
       {!typed && auto && <Text dimColor wrap="wrap">{`Uruchamiam ${auto.label} z przykładowymi danymi. Wpisz własne wywołanie, żeby sprawdzić inne.`}</Text>}
+      {pc?.problem && <Text color="warning" wrap="wrap">{pc.problem}</Text>}
       {badCall && <Text color="warning" wrap="wrap">{`„${typed}” to nie jest wywołanie funkcji${auto ? `, więc uruchamiam ${auto.label}. Wpisz np. ${auto.label}` : '. Wpisz np. nazwa(1, 2)'}.`}</Text>}
       <Input key="sim-call" label={pair ? 'Wywołanie (A i B):' : 'Wywołanie:'} placeholder={auto ? auto.label : pair?.hint ? pair.hint : 'np. add(2, 3)'} value={s.callArgs} submitLabel="uruchom" onSubmit={value => io.set(S.sim, x => ({ ...x, callArgs: value, cursor: 0 }))} />
       {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair)}

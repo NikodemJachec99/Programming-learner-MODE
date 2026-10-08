@@ -13,6 +13,7 @@ import { ago, card, code, label, md, muted, shortPath } from './kit'
 import type { Kit } from './kit'
 import { S } from './state'
 import { lessonBlock } from './lesson'
+import { renderBench } from './bench'
 import { PLACEMENT, placementSummary } from '../engine/placement'
 
 const FIRST_GROUPS = 6
@@ -292,6 +293,7 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
   const levels = Object.fromEntries((await io.get(S.knowledge)).map(r => [r.id, r.level]))
   const concepts = conceptNames(interestingConcepts(m.concepts, levels), 3)
   const explaining = lab.lessonFor === id
+  const benchOpen = lab.bench?.forId === id
   const job = await io.get(S.job)
   const lesson = await io.get(S.lesson)
   const view2 = await io.get(S.view)
@@ -314,8 +316,8 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
         </Button>
       )}
       {canRun && (
-        <Button key="lab-run" onPress={() => mentor.runChange(io, id)}>
-          {c?.before ? '▶ Uruchom przed i po' : '▶ Uruchom'}
+        <Button key="lab-run" variant={benchOpen ? 'primary' : undefined} onPress={() => mentor.openBench(io, id)}>
+          {benchOpen ? 'Zamknij laboratorium' : c?.before ? '▶ Uruchom i porównaj' : '▶ Uruchom'}
         </Button>
       )}
       {(canGuess || canRun || m.concepts.length > 0) && !!c && (
@@ -345,6 +347,7 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
       {provenance ? muted(k, provenance) : null}
       {beforeNote ? muted(k, beforeNote) : null}
       {actions}
+      {benchOpen && sim && lab.bench && <Box marginTop={1}>{renderBench(io, k, lab.bench, m.file, m.lang, sim)}</Box>}
       {lessonView}
       {!sim && muted(k, 'Symulator wykonuje JS, TS i Darta. Tu zostaje porównanie kodu.')}
       {renderAlternatives(io, k, lab, id, m.lang)}
@@ -392,8 +395,8 @@ function renderAlternatives(io: Host, k: Kit, lab: MentorLab, id: string, langId
           ) : (
             <Box flexDirection="row" columnGap={1}>
               {sim && (
-                <Button key={`alt-${i}-sim`} plain onPress={() => mentor.compareAlternative(io, id, i)}>
-                  Porównaj w symulatorze
+                <Button key={`alt-${i}-sim`} plain onPress={() => mentor.benchAddAlt(io, id, i)}>
+                  Dodaj do laboratorium
                 </Button>
               )}
               <Button key={`alt-${i}-pick`} plain onPress={() => io.set(S.lab, l => ({ ...l, confirm: i, handed: null }))}>

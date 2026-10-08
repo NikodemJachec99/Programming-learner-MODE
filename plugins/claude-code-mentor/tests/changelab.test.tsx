@@ -89,24 +89,25 @@ test('nowy plik ma "przed" = brak, nieudana edycja i plik wrażliwy nie zostawia
   expect(mentor.getChange(getState('changes')[0]!.id)!.after).toBe(null)
 })
 
-test('B: przed i po na tych samych danych, x = 10 wybiera inną gałąź, pliki nietknięte', async () => {
+test('B: laboratorium uruchamia przed i po na tych samych danych, x = 10 wybiera inną gałąź, pliki nietknięte', async () => {
   setState('changes', () => [])
+  setState('lab', () => ({ ...DEFAULT_LAB }))
   const io = fakeHost()
   await mentor.onTool(io, 'Edit', { file_path: 'C:/p/src/label.ts' }, edit('C:/p/src/label.ts', BEFORE, PATCH))
   const id = getState('changes')[0]!.id
-  await mentor.runChange(io, id)
-  const sim = getState('sim')
-  expect(getState('tab')).toBe('sim')
-  expect(sim.pair?.aLabel).toBe('przed')
-  expect(sim.pair?.hint).toBe('label(10)')
-  expect(sim.callArgs).toBe('console.log(label(10))')
-  const call = 'console.log(label(10))'
-  const a = simulate(`${sim.pair!.a}\n${call}`)
-  const b = simulate(`${sim.pair!.b}\n${call}`)
-  expect(a.output).toEqual(['dużo'])
-  expect(b.output).toEqual(['mało'])
-  expect(a.conditions[0]!.results).toEqual([false])
-  expect(b.conditions[0]!.results).toEqual([true])
+  await mentor.openBench(io, id)
+  const bench = getState('lab').bench!
+  expect(getState('tab')).not.toBe('sim')
+  expect(bench.variants.map(v => `${v.id} ${v.label}`)).toEqual(['A przed', 'B po'])
+  expect(bench.cases[0]).toBe('label(10)')
+  const { runBench } = await import('../hooks/engine/bench')
+  const r = runBench(bench.variants, bench.cases, 'js')
+  expect(r.cells[0]![0]!.text).toContain('dużo')
+  expect(r.cells[0]![1]!.text).toContain('mało')
+  expect(r.differs[0]).toBe(true)
+  // drugie kliknięcie zamyka
+  await mentor.openBench(io, id)
+  expect(getState('lab').bench).toBe(null)
 })
 
 test('D: inne podejście trafia do Claude dopiero po potwierdzeniu i tylko do pola wiadomości', async () => {
@@ -123,6 +124,10 @@ test('D: inne podejście trafia do Claude dopiero po potwierdzeniu i tylko do po
   expect(filled.length).toBe(1)
   expect(filled[0]).toContain('Tablica progów')
   expect(filled[0]).toContain('C:/p/src/label.ts')
+  // pełny kod wybranej alternatywy, ograniczenia i sprawdzenie, nie sam tytuł
+  expect(filled[0]).toContain('const P = [10]')
+  expect(filled[0]).toContain('Ograniczenia')
+  expect(filled[0]).toContain('testy')
   expect(getState('lab').handed).toContain('Enterem')
 })
 
@@ -134,7 +139,7 @@ const PANE = {
   viewport: { columns: 140, rows: 50 },
 }
 
-test('panel: zmiana Claude pojawia się w Zmianach, otwiera się jednym kliknięciem i prowadzi do symulatora', async ($, on) => {
+test('panel: zmiana Claude pojawia się w Zmianach, otwiera się jednym kliknięciem i otwiera laboratorium', async ($, on) => {
   mock.clock(on, { now: 1_760_000_000_000 })
   on('tool.call', { tool: 'Edit' }, () => edit('C:/p/src/limits.ts', BEFORE, PATCH))
   await $.tool.call({ tool: 'Edit', file_path: 'C:/p/src/limits.ts', old_string: 'x < 10', new_string: 'x <= 10' })
@@ -151,10 +156,10 @@ test('panel: zmiana Claude pojawia się w Zmianach, otwiera się jednym kliknię
     await ui.press({ key: 'lab-v-after' })
     expect(await ui.find({ type: 'Code', text: /x <= 10/ })).toBeDefined()
     await ui.press({ key: 'lab-run' })
-    expect(await ui.find({ key: 'pair-a' })).toBeDefined()
-    expect(await ui.find({ key: 'pair-b' })).toBeDefined()
-    await ui.press({ key: 'pair-close' })
-    await ui.press({ key: 'tab-changes' })
+    expect(await ui.find({ key: 'bv-A' })).toBeDefined()
+    expect(await ui.find({ key: 'bv-B' })).toBeDefined()
+    await ui.press({ key: 'lab-run' })
+    expect(await ui.find({ key: 'bv-A' })).toBe(undefined)
     await ui.press({ key: 'lab-back' })
     await ui.unmount()
   }
@@ -325,5 +330,101 @@ test('panel: karta na start prowadzi przez test poziomu i znika po wyniku', asyn
   expect(await ui.find({ key: 'pl-start' })).toBe(undefined)
   await ui.press({ key: 'pl-close' })
   expect(await ui.find({ type: 'Text', text: /Test poziomu: / })).toBe(undefined)
+  await ui.unmount()
+})
+
+test('sekret w zmienionym literale nie trafia do opisu zmiany ani do listy, także bez zapisu kodu', async () => {
+  const KEY_OLD = 'sk-proj-AAAAAAAAAAAAAAAAAAAAAAAA1111'
+  const KEY_NEW = 'sk-proj-BBBBBBBBBBBBBBBBBBBBBBBB2222'
+  const PW_NEW = 'hunter2hunter2'
+  const before = [`const client = make("${KEY_OLD}")`, 'const password = "stare-haslo-1"'].join('\n')
+  const patch = [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2, lines: [`-const client = make("${KEY_OLD}")`, '-const password = "stare-haslo-1"', `+const client = make("${KEY_NEW}")`, `+const password = "${PW_NEW}"`] }]
+  for (const saveChanges of [true, false]) {
+    setState('changes', () => [])
+    await mentor.setSettings(fakeHost(), { saveChanges })
+    await mentor.onTool(fakeHost(), 'Edit', { file_path: 'C:/p/src/client.ts' }, edit('C:/p/src/client.ts', before, patch))
+    const meta = getState('changes')[0]!
+    const full = mentor.getChange(meta.id)!
+    const all = JSON.stringify({ meta, full, feed: getState('feed').slice(0, 3) })
+    expect(all).not.toContain('BBBBBBBBBBBB')
+    expect(all).not.toContain('AAAAAAAAAAAA')
+    expect(all).not.toContain(PW_NEW)
+  }
+  await mentor.setSettings(fakeHost(), { saveChanges: true })
+})
+
+test('A i B bez wspólnej funkcji: brak porównania zamiast porównania błędów', async () => {
+  const { pairCall } = await import('../hooks/sim/autocall')
+  const same = pairCall('function f(x: number) { return x }', 'function f(x: number) { return x * 2 }', 'js')
+  expect(same.problem).toBe(null)
+  expect(same.call).toContain('f(')
+  const renamed = pairCall('function total(xs: number[]) { return 0 }', 'function sum(xs: number[]) { return 0 }', 'js')
+  expect(renamed.call).toBe(null)
+  expect(renamed.problem).toContain('nie mają wspólnej funkcji')
+  // wpisane wywołanie musi istnieć w obu wersjach
+  expect(pairCall('function total(a) {}', 'function sum(a) {}', 'js', 'console.log(sum(2))').problem).toContain('sum')
+  expect(pairCall('function total(a) {}', 'function sum(a) {}', 'js', 'console.log(sum(2))').call).toBe(null)
+})
+
+test('pytanie ze zmiany nie powstaje, gdy wynik zależy od zaślepki albo założenia', async () => {
+  const { changeQuestion } = await import('../hooks/engine/changequiz')
+  const base = { id: 'c1', ts: 0, turn: 1, turnLabel: null, tool: 'Edit', kind: 'edit', status: 'ok', file: 'a.ts', line: 1, lang: 'ts', summary: '', added: 1, removed: 1, concepts: [], facts: [], unified: '', beforeStart: 1, afterStart: 1 }
+  const stubbed = { ...base, before: 'export function price(id: string) {\n  return db.get(id) + 1\n}', after: 'export function price(id: string) {\n  return db.get(id) + 2\n}' }
+  expect(changeQuestion('q', stubbed as never, 'functions')).toBe(null)
+  const random = { ...base, before: 'console.log(Math.random() > 2)', after: 'console.log(Math.random() > 3)' }
+  expect(changeQuestion('q', random as never, 'functions')).toBe(null)
+  // bez założeń pytanie jest
+  const plain = { ...base, before: 'export function f(n: number) {\n  return n + 1\n}', after: 'export function f(n: number) {\n  return n + 2\n}' }
+  expect(changeQuestion('q', plain as never, 'functions')).not.toBe(null)
+})
+
+test('laboratorium: wersje A/B/C na jawnych przypadkach, edycja tylko kopii, brak funkcji to nie wynik', async () => {
+  const { runBench, replaceLine, insertLineAfter, deleteLine, nextVariantId, validCase, regressionPrompt } = await import('../hooks/engine/bench')
+  const A = 'function sum(xs: number[]) {\n  let s = 0\n  for (const x of xs) s += x\n  return s\n}'
+  const B = 'function sum(xs: number[]) {\n  return xs.reduce((s, x) => s + x, 0)\n}'
+  let C = replaceLine(B, 2, '  return xs.reduce((s, x) => s + x, 1)')
+  const variants = [
+    { id: 'A', label: 'przed', code: A, origin: 'before' as const },
+    { id: 'B', label: 'po', code: B, origin: 'after' as const },
+    { id: 'C', label: 'kopia B', code: C, origin: 'edit' as const },
+    { id: 'D', label: 'inna nazwa', code: 'function total(xs: number[]) { return 0 }', origin: 'alt' as const },
+  ]
+  const r = runBench(variants, ['sum([1, 2, 3])', 'sum([])'], 'js')
+  expect(r.cells[0]!.map(c => c.text)).toEqual(['6', '6', '7', 'brak `sum` w tej wersji'])
+  expect(r.cells[0]![3]!.kind).toBe('missing')
+  expect(r.differs).toEqual([true, true])
+  expect(runBench(variants.slice(0, 2), ['sum([1, 2, 3])'], 'js').differs).toEqual([false])
+  // edycja linii
+  C = insertLineAfter(C, 1, '  // nowa')
+  expect(C.split('\n')[1]).toBe('  // nowa')
+  expect(deleteLine(C, 2).split('\n').length).toBe(3)
+  expect(nextVariantId(variants)).toBe(null)
+  expect(nextVariantId(variants.slice(0, 2))).toBe('C')
+  expect(validCase('sum')).toContain('nie jest wywołanie')
+  expect(validCase('sum([1])')).toBe(null)
+  // prośba o sprawdzenie w projekcie: przewidywanie wersji po, kopia jako kod do testu, bez zmian w produkcji
+  const prompt = regressionPrompt('C:/p/sum.ts', 'ts', variants, ['sum([1, 2, 3])'], r.cells)
+  expect(prompt).toContain('`sum([1, 2, 3])` → 6')
+  expect(prompt).toContain('s + x, 1')
+  expect(prompt).toContain('Nie zmieniaj kodu produkcyjnego')
+})
+
+test('panel: „Uruchom i porównaj” otwiera laboratorium w Zmianach, przypadek i kopia działają bez zmiany zakładki', async ($, on) => {
+  mock.clock(on, { now: 1_760_000_000_000 })
+  on('tool.call', { tool: 'Edit' }, () => edit('C:/p/src/bench.ts', BEFORE, PATCH))
+  await $.tool.call({ tool: 'Edit', file_path: 'C:/p/src/bench.ts', old_string: 'x < 10', new_string: 'x <= 10' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-changes' })
+  const row = await ui.find({ type: 'Button', text: /bench\.ts/ })
+  await ui.press({ key: row!.key! })
+  await ui.press({ key: 'lab-run' })
+  expect(await ui.find({ type: 'Text', text: /różne wyniki/ })).toBeDefined()
+  await ui.input({ key: 'bench-case', text: 'label(3)', kind: 'submit' })
+  expect(await ui.find({ type: 'Text', text: /^label\(3\)$/ })).toBeDefined()
+  await ui.press({ key: 'bv-copy' })
+  expect(await ui.find({ key: 'bv-C' })).toBeDefined()
+  expect(await ui.find({ key: 'bench-line' })).toBeDefined()
+  await ui.press({ key: 'bench-step' })
+  expect(await ui.find({ key: 'sim-step' })).toBeDefined()
   await ui.unmount()
 })
