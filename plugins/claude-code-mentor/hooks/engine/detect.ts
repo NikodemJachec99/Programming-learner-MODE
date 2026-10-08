@@ -108,11 +108,24 @@ const CONFIG_FILE = /(^|[\\/])(package\.json|tsconfig[\w.-]*\.json|vite\.config\
 
 export type ConceptHit = { id: string; line: number; text: string; strong: boolean }
 
+/** Pliki, które nie są kodem: tekst, dokumentacja, licencje, listy ignorowanych. */
+const PROSE = new Set(['markdown', 'md', 'txt', 'text', 'rst', 'adoc', 'csv', 'svg', 'xml', 'html', 'lock', 'gitignore', 'gitattributes', 'license', ''])
+/** Konfiguracja: tylko pojęcia, które naprawdę w niej występują. */
+const CONFIG_ONLY: Record<string, string[]> = {
+  yaml: ['ci-cd', 'docker', 'env-config', 'secrets-management'],
+  toml: ['packages-dependencies', 'env-config'],
+  json: ['packages-dependencies', 'json'],
+  dockerfile: ['docker', 'env-config'],
+}
+
 export function detectConcepts(lang: string, lines: { line: number; text: string }[], path: string | null = null): ConceptHit[] {
+  if (PROSE.has(lang.toLowerCase()) || (path && /(^|[\\/])(LICENSE|COPYING|NOTICE|CHANGELOG|README)(\.[a-z]+)?$/i.test(path))) return []
+  const only = CONFIG_ONLY[lang]
   const hits: ConceptHit[] = []
   const seen = new Set<string>()
   const joined = lines.map(l => l.text).join('\n')
   for (const r of RULES) {
+    if (only && !only.includes(r.id)) continue
     if (r.langs && !r.langs.includes(lang) && !(lang === 'sql' && r.id.startsWith('sql'))) continue
     if (lang === 'sql' && !r.id.startsWith('sql') && r.id !== 'orm') continue
     // reguły wielowierszowe sprawdzamy na całości, resztę linia po linii
@@ -186,6 +199,10 @@ export function classifyCommand(cmd: string): BashFacts {
     return { kind: 'build', concepts: /docker/i.test(c) ? ['docker'] : ['modules-imports'], summary: 'Budowanie projektu', packages: [] }
   }
   if (/^\s*git\s/.test(c) || /&&\s*git\s/.test(c)) {
+    // Tylko operacje, które coś zmieniają w historii; odczyty (status, log, grep, diff) to szum.
+    if (!/\bgit\s+(commit|push|pull|merge|rebase|checkout|switch|branch|tag|reset|revert|cherry-pick|stash|init|clone)\b/.test(c)) {
+      return { kind: 'bash', concepts: [], summary: c.length > 80 ? c.slice(0, 77) + '…' : c, packages: [] }
+    }
     const branch = /\bgit\s+(checkout|switch|branch|merge|rebase)\b/.test(c)
     return { kind: 'git', concepts: branch ? ['git-branching'] : ['git-basics'], summary: `Operacja git: ${c.split(/\s+/).slice(0, 3).join(' ')}`, packages: [] }
   }

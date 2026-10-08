@@ -130,3 +130,66 @@ export function levelBadge(k: Kit, level: number): RenderElement {
   const { Text } = k.E
   return <Text color={LEVEL_THEME[level] ?? 'inactive'}>{`[${LEVEL_SHORT[level] ?? '?'}]`}</Text>
 }
+
+// ===================== system wyglądu v2 =====================
+// Jeden akcent (claude) dla najważniejszej rzeczy na ekranie, trzy kolory stanu,
+// reszta w szarościach. Etykiety sekcji wielkimi literami, przygaszone.
+
+export const KIND_BADGE: Record<string, { label: string; color: string }> = {
+  create: { label: 'NOWY', color: 'success' },
+  edit: { label: 'EDYCJA', color: 'suggestion' },
+  config: { label: 'KONFIG', color: 'subtle' },
+  dependency: { label: 'PAKIET', color: 'warning' },
+  test: { label: 'TEST', color: 'permission' },
+  build: { label: 'BUILD', color: 'subtle' },
+  error: { label: 'BŁĄD', color: 'error' },
+  fix: { label: 'NAPRAWA', color: 'success' },
+  git: { label: 'GIT', color: 'subtle' },
+  bash: { label: 'KOMENDA', color: 'subtle' },
+}
+const BADGE_WIDTH = 7
+
+/** Etykieta sekcji: WIELKIE LITERY, przygaszona, opcjonalnie licznik po prawej. */
+export function label(k: Kit, text: string, right?: string): RenderElement {
+  const { Box, Text } = k.E
+  return (
+    <Box flexDirection="row" justifyContent="space-between" marginTop={1}>
+      <Text dimColor bold>
+        {text.toUpperCase()}
+      </Text>
+      {right ? <Text dimColor>{right}</Text> : null}
+    </Box>
+  )
+}
+
+/** Plakietka rodzaju zmiany o stałej szerokości (wyrównane kolumny). */
+export function badge(k: Kit, kind: string, failed = false): RenderElement {
+  const { Text } = k.E
+  const b = failed ? { label: 'BŁĄD', color: 'error' } : (KIND_BADGE[kind] ?? { label: kind.toUpperCase(), color: 'subtle' })
+  return (
+    <Text color={b.color} bold>
+      {b.label.padEnd(BADGE_WIDTH)}
+    </Text>
+  )
+}
+
+/** Krótka nazwa pojęcia (bez angielskiego terminu w nawiasie). */
+export const shortName = (name: string): string => name.replace(/\s*\(.*\)$/, '')
+
+/** Lista pojęć jako jedna przygaszona linia: "Async/await · Promise · JSON". */
+export function tags(k: Kit, names: string[], max = 3): RenderElement | null {
+  const { Text } = k.E
+  if (!names.length) return null
+  const shown = names.slice(0, max)
+  return <Text dimColor wrap="wrap">{shown.join(' · ') + (names.length > max ? ` · +${names.length - max}` : '')}</Text>
+}
+
+/** Karta: neutralna ramka albo akcent dla jednego, najważniejszego elementu. */
+export function panel(k: Kit, accent: boolean, ...children: (RenderElement | false | null | undefined)[]): RenderElement {
+  const { Box } = k.E
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor={accent ? 'claude' : 'subtle'} borderDimColor={!accent} paddingX={1} marginTop={1}>
+      {children.filter(Boolean)}
+    </Box>
+  )
+}

@@ -15,18 +15,21 @@ import { S } from './state'
 export const PANE_ID = 'mentor'
 export const PANE_TITLE = 'Mentor'
 
+/** Cztery główne zakładki w pasku; reszta w menu "Więcej", żeby pasek nie zawijał się do 2 linii. */
 const TABS: { id: MentorTab; label: string }[] = [
   { id: 'now', label: 'Teraz' },
-  { id: 'lesson', label: 'Zrozum kod' },
+  { id: 'lesson', label: 'Lekcja' },
   { id: 'sim', label: 'Symulator' },
   { id: 'practice', label: 'Ćwiczenia' },
+]
+const MORE: { id: MentorTab; label: string }[] = [
   { id: 'knowledge', label: 'Moja wiedza' },
-  { id: 'path', label: 'Ścieżka' },
+  { id: 'path', label: 'Ścieżka nauki' },
   { id: 'settings', label: 'Ustawienia' },
 ]
 
 export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: number): Promise<RenderElement> {
-  const { Box, Text, Button } = E
+  const { Box, Text, Button, Select } = E
   const k: Kit = { E, cols, surface }
   const tab = await io.get(S.tab)
   const unseen = await io.get(S.unseen)
@@ -62,14 +65,16 @@ export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: 
   return (
     <Box flexDirection="column">
       {settings.paused && <Text color="warning">Pauza: automatyczne lekcje wstrzymane (/mentor resume)</Text>}
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginBottom={1}>
+      <Box flexDirection="row" flexWrap="nowrap" columnGap={1} alignItems="center" marginBottom={1}>
         {TABS.map(t => {
-          const badge = t.id === 'lesson' && unseen > 0 ? ` (${unseen})` : t.id === 'practice' && quiz?.status === 'asking' ? ' •' : ''
+          const badge = t.id === 'lesson' && unseen > 0 ? ` ${unseen}` : t.id === 'practice' && quiz?.status === 'asking' ? ' •' : ''
+          const active = tab === t.id
           return (
             <Button
               key={`tab-${t.id}`}
-              variant={tab === t.id ? 'primary' : undefined}
-              dimColor={tab !== t.id}
+              variant={active ? 'primary' : undefined}
+              plain={active ? undefined : true}
+              dimColor={!active}
               onPress={async () => {
                 await io.set(S.tab, () => t.id)
                 if (t.id === 'lesson') await io.set(S.unseen, () => 0)
@@ -79,6 +84,12 @@ export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: 
             </Button>
           )
         })}
+        <Select
+          key="tab-more"
+          value={MORE.some(m => m.id === tab) ? tab : 'more'}
+          options={[{ value: 'more', label: 'Więcej' }, ...MORE.map(m => ({ value: m.id, label: m.label }))]}
+          onSelect={v => (v === 'more' ? undefined : io.set(S.tab, () => v as MentorTab))}
+        />
       </Box>
       {body}
     </Box>

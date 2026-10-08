@@ -113,7 +113,7 @@ const initial = (): StateShape => ({
   quizKey: null,
   sim: DEFAULT_SIM,
   usage: { autoCalls: 0, manualCalls: 0, tokens: 0, limitCalls: 0, limitTokens: 0, breakerUntil: 0 },
-  view: { knowledgeFilter: -1, conceptDetail: null, confirm: null, pathMode: 'list', lessonMode: 'points', openSections: ['observed', 'mechanism', 'why', 'l-intuition', 'l-code', 'l-mechanism'], notice: null, importPath: '' },
+  view: { knowledgeFilter: -1, conceptDetail: null, confirm: null, pathMode: 'list', lessonMode: 'points', openSections: ['observed', 'mechanism', 'why', 'l-intuition', 'l-code', 'l-mechanism'], notice: null, importPath: '', feedExpanded: false },
   unseen: 0,
 })
 
