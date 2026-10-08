@@ -421,7 +421,7 @@ test('panel: „Uruchom i porównaj” otwiera laboratorium w Zmianach, przypade
   // wyniki odsłaniają się po kolei; w trakcie widać, co się liczy
   expect(await ui.find({ type: 'Text', text: /wykonuję/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /różne wyniki/ })).toBe(undefined)
-  await clock.advance(10000)
+  await clock.advance(30000)
   expect(await ui.find({ type: 'Text', text: /różne wyniki/ })).toBeDefined()
   await ui.input({ key: 'bench-case', text: 'label(3)', kind: 'submit' })
   expect(await ui.find({ type: 'Text', text: /^label\(3\)$/ })).toBeDefined()

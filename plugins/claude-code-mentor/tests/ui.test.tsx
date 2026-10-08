@@ -156,17 +156,17 @@ test('symulator: „Odtwórz” przechodzi kod sam krok po kroku, pauza zatrzymu
   await ui.press({ key: 'sim-reset' })
   await ui.press({ key: 'sim-play' })
   expect(await ui.find({ key: 'sim-play', text: /Pauza/ })).toBeDefined()
-  await clock.advance(4000)
+  await clock.advance(17000)
   const mid = (await ui.find({ type: 'Text', text: /[▰▱] \d+\/\d+$/ }))!.text!
   const at = Number(/(\d+)\/\d+$/.exec(mid)![1])
   expect(at).toBeGreaterThan(1)
   // pauza: kursor stoi mimo upływu czasu
   await ui.press({ key: 'sim-play' })
-  await clock.advance(3000)
+  await clock.advance(20000)
   expect(await ui.find({ type: 'Text', text: new RegExp(`[▰▱] ${at}/[0-9]+$`) })).toBeDefined()
   // wznowienie do końca
   await ui.press({ key: 'sim-play' })
-  await clock.advance(30000)
+  await clock.advance(120000)
   expect(await ui.find({ key: 'sim-play', text: /jeszcze raz/ })).toBeDefined()
   // tempo: domyślnie wolno, przełącznik idzie po kolei
   expect(await ui.find({ key: 'sim-speed', text: /wolno/ })).toBeDefined()

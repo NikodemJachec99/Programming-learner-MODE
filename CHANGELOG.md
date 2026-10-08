@@ -14,8 +14,8 @@
 
 ### Animacja uruchomienia
 
-- Symulator: „▶ Odtwórz” przechodzi kod sam, krok po kroku, z podświetloną linią, zmiennymi, wyjściem i paskiem postępu. Domyślnie wolno, 1,8 s na krok, przełącznik tempa (średnio 1 s, szybko 0,45 s), „⏸ Pauza” w każdej chwili, każdy ręczny krok zatrzymuje odtwarzanie. Przykład do nauki odtwarza się od razu.
-- Laboratorium: po „Uruchom i porównaj” wyniki odsłaniają się po kolei, a liczona komórka pokazuje, którą linię i który krok właśnie wykonuje. „▶ jeszcze raz” powtarza animację.
+- Symulator: „▶ Odtwórz” przechodzi kod sam, krok po kroku, z podświetloną linią, zmiennymi, wyjściem i paskiem postępu. Domyślnie wolno, 8 s na krok, przełącznik tempa (średnio 4 s, szybko 1,8 s), „⏸ Pauza” w każdej chwili, każdy ręczny krok zatrzymuje odtwarzanie. Przykład do nauki odtwarza się od razu.
+- Laboratorium: po „Uruchom i porównaj” wyniki odsłaniają się po kolei, a liczona komórka (ok. 4 s) pokazuje, którą linię i który krok właśnie wykonuje. „▶ jeszcze raz” powtarza animację.
 
 ### Prawdziwy kod czy przykład
 

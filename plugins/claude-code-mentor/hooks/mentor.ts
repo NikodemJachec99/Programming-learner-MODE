@@ -101,7 +101,7 @@ export function suggestCall(code: string, unified: string, dialect: 'js' | 'dart
 }
 
 /** Pauza między krokami odtwarzania w Symulatorze. */
-export const SPEED_MS = { slow: 1800, normal: 1000, fast: 450 } as const
+export const SPEED_MS = { slow: 8000, normal: 4000, fast: 1800 } as const
 export const SPEED_LABEL = { slow: 'wolno', normal: 'średnio', fast: 'szybko' } as const
 
 export class Mentor {
@@ -513,7 +513,7 @@ export class Mentor {
       for (let f = 0; f < frames; f++) {
         if (!(await alive())) return
         await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: idx, frame: f } } : l))
-        if (!(await io.sleep(320))) return
+        if (!(await io.sleep(800))) return
       }
     }
     if (await alive()) await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: undefined, frame: undefined } } : l))
@@ -521,7 +521,7 @@ export class Mentor {
 
   /**
    * Odtwarzanie w Symulatorze: kursor idzie sam, krok po kroku. Tempo stałe na krok, żeby dało się
-   * śledzić linię, zmienne i wyjście: wolno 1,8 s, średnio 1 s, szybko 0,45 s.
+   * śledzić linię, zmienne i wyjście: wolno 8 s, średnio 4 s, szybko 1,8 s.
    */
   async playSim(io: Host, total?: number): Promise<void> {
     const sim = await io.get(S.sim)

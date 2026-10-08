@@ -264,7 +264,7 @@ Deterministyczny interpreter podzbioru JavaScript i TypeScript, napisany od zera
 
 | Funkcja | Opis |
 |---|---|
-| `▶ Odtwórz` | kod wykonuje się sam, krok po kroku: podświetlona linia, zmienne i wyjście zmieniają się na oczach, pasek postępu pokazuje, ile zostało. Domyślnie wolno, 1,8 s na krok, przełącznik „tempo” daje średnio (1 s) i szybko (0,45 s). `⏸ Pauza` w każdej chwili. Przykład z „Zobacz na przykładzie” odtwarza się od razu |
+| `▶ Odtwórz` | kod wykonuje się sam, krok po kroku: podświetlona linia, zmienne i wyjście zmieniają się na oczach, pasek postępu pokazuje, ile zostało. Domyślnie wolno, 8 s na krok, przełącznik „tempo” daje średnio (4 s) i szybko (1,8 s). `⏸ Pauza` w każdej chwili. Przykład z „Zobacz na przykładzie” odtwarza się od razu |
 | `↺` `◀` `Krok ▶` `⏭` | ręczne przejście po krokach w obie strony |
 | Karta kroku | linia, „dlaczego teraz”, zmienne, stos, kolejki i wyjście w jednym miejscu, „więcej o tym kroku” na życzenie |
 | Przykładowe dane | kod, który tylko definiuje funkcje, dostaje wywołanie z danymi dobranymi z typów i nazw parametrów (np. `loadOrders(["1", "2"])`). Własne wywołanie wpisujesz obok |
