@@ -14,29 +14,16 @@ import type { CondLang } from '../sim/conditions'
 import { explainStep, whyStep } from '../sim/explain'
 import { OP_GROUPS, applyEdits, boundaryNote, compareRuns } from '../sim/variants'
 import { autoCall, looksLikeCall, pairCall } from '../sim/autocall'
+import { EXAMPLES } from '../engine/examples'
 import { card, md, muted, section } from './kit'
 import type { Kit } from './kit'
 import { DEFAULT_SIM, S } from './state'
 import type { SqlRun } from '../store/db'
 
-export const EXAMPLES: { id: string; label: string; source: string; dialect?: Dialect }[] = [
-  { id: 'if', label: 'Warunek if (x < 10)', source: DEFAULT_SIM.source },
-  { id: 'loop', label: 'Pętla for: suma', source: 'let sum = 0\nfor (let i = 0; i < 5; i++) {\n  sum += i\n}\nconsole.log(sum)' },
-  { id: 'fn', label: 'Funkcja: argumenty i return', source: 'function area(width, height) {\n  const result = width * height\n  return result\n}\nconst a = area(3, 4)\nconsole.log("pole:", a)' },
-  { id: 'eq', label: '== vs ===', source: 'const input = "0"\nif (input == 0) {\n  console.log("== mówi: równe")\n}\nif (input === 0) {\n  console.log("=== mówi: równe")\n} else {\n  console.log("=== mówi: różne typy")\n}' },
-  { id: 'async', label: 'async/await i event loop', source: 'console.log("1: start")\nsetTimeout(() => console.log("5: setTimeout"), 0)\nasync function load() {\n  console.log("2: load start")\n  await null\n  console.log("4: po await")\n}\nload()\nconsole.log("3: koniec kodu synchronicznego")' },
-  { id: 'err', label: 'Wyjątek i propagacja', source: 'function parseAge(text) {\n  const n = Number(text)\n  if (Number.isNaN(n)) {\n    throw new Error("To nie liczba: " + text)\n  }\n  return n\n}\ntry {\n  console.log(parseAge("12"))\n  console.log(parseAge("abc"))\n} catch (e) {\n  console.log("Błąd:", e.message)\n}' },
-  { id: 'dart-basics', label: 'Dart: zmienne, ~/ i null safety', dialect: 'dart', source: "void main() {\n  int total = 17;\n  final people = 5;\n  print('każdy dostaje ${total ~/ people}');\n  print('reszta ${total % people}');\n  String? coupon;\n  print(coupon ?? 'brak kuponu');\n  coupon = 'RABAT10';\n  print(coupon.length);\n}" },
-  { id: 'dart-class', label: 'Dart: klasa, fromJson i getter', dialect: 'dart', source: "class Product {\n  final String name;\n  final double price;\n  Product({required this.name, required this.price});\n\n  factory Product.fromJson(Map<String, dynamic> json) {\n    return Product(name: json['name'], price: json['price']);\n  }\n\n  bool get isCheap => price < 10;\n}\n\nvoid main() {\n  final items = [\n    Product.fromJson({'name': 'Kawa', 'price': 12.5}),\n    Product(name: 'Bułka', price: 1.2),\n  ];\n  for (final p in items) {\n    if (p.isCheap) {\n      print('${p.name}: tanio');\n    } else {\n      print('${p.name}: drogo');\n    }\n  }\n}" },
-  { id: 'dart-future', label: 'Dart: Future, await i kolejki', dialect: 'dart', source: "Future<String> fetchUser() async {\n  print('2: pobieram');\n  await Future.delayed(Duration(milliseconds: 300));\n  return 'Ola';\n}\n\nvoid main() async {\n  print('1: start');\n  Future(() => print('4: kolejka zdarzeń'));\n  scheduleMicrotask(() => print('3: mikrozadanie'));\n  final user = await fetchUser();\n  print('5: mam $user');\n}" },
-  { id: 'dart-flutter', label: 'Flutter: drzewo widgetów', dialect: 'dart', source: "class CounterPage extends StatefulWidget {\n  const CounterPage({super.key});\n  @override\n  State<CounterPage> createState() => _CounterPageState();\n}\n\nclass _CounterPageState extends State<CounterPage> {\n  int _count = 0;\n\n  @override\n  Widget build(BuildContext context) {\n    return Scaffold(\n      appBar: AppBar(title: const Text('Licznik')),\n      body: Center(\n        child: Column(\n          mainAxisAlignment: MainAxisAlignment.center,\n          children: [\n            Text('Kliknięcia: $_count'),\n            ElevatedButton(\n              onPressed: () => setState(() => _count++),\n              child: const Text('+1'),\n            ),\n          ],\n        ),\n      ),\n    );\n  }\n}" },
-  { id: 'closure', label: 'Domknięcie (closure)', source: 'function makeCounter() {\n  let count = 0\n  return () => {\n    count++\n    return count\n  }\n}\nconst next = makeCounter()\nnext()\nconsole.log(next())' },
-]
-
 export async function loadSim(io: Host, source: string, origin: string, lang?: string): Promise<void> {
   const isSql = /^\s*(select|with|insert|update|delete)\b/i.test(source)
   const dialect: Dialect = lang === 'dart' || (lang === undefined && looksLikeDart(source)) ? 'dart' : 'js'
-  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, pair: null, source, origin, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
+  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, pair: null, source, origin, note: undefined, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
   await io.set(S.tab, () => 'sim' as const)
 }
 
@@ -206,6 +193,7 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
   return (
     <Box flexDirection="column">
       <Text dimColor wrap="truncate-end">{`${s.origin} · tylko w pamięci, pliki bez zmian`}</Text>
+      {s.note && <Text color="suggestion" wrap="wrap">{s.note}</Text>}
       {pair && (
         <Box flexDirection="row" columnGap={1}>
           <Button key="pair-a" variant={variant === 'A' ? 'primary' : undefined} plain={variant === 'A' ? undefined : true} dimColor={variant !== 'A'} onPress={() => io.set(S.sim, x => ({ ...x, variant: 'A' as const, cursor: 0 }))}>
@@ -398,7 +386,7 @@ export async function renderSim(io: Host, k: Kit): Promise<RenderElement> {
           options={[{ value: '', label: '(wybierz albo użyj /mentor sim)' }, ...EXAMPLES.map(e => ({ value: e.id, label: e.label }))]}
           onSelect={v => {
             const ex = EXAMPLES.find(e => e.id === v)
-            if (ex) return loadSim(io, ex.source, `przykład: ${ex.label}`, ex.dialect ?? 'js')
+            if (ex) return mentor.showExample(io, ex)
           }}
         />
       )}

@@ -9,6 +9,8 @@ import { ago, code, md } from './kit'
 import type { Kit } from './kit'
 import { S } from './state'
 import { loadSim } from './sim'
+import { exampleFor } from '../engine/examples'
+import { runnable } from '../engine/runnable'
 
 /** Krótki, rozróżnialny opis lekcji do listy wyboru. */
 function lessonLabel(l: MentorLessonMeta, now: number): string {
@@ -25,7 +27,11 @@ export function lessonBlock(io: Host, k: Kit, lesson: MentorLesson, open: Set<st
   const { Box, Text, Button } = k.E
   const b = lesson.body
   const main = lesson.conceptIds[0] ? conceptById(lesson.conceptIds[0]) : undefined
-  const canSim = (b.lang === 'js' || b.lang === 'ts' || b.lang === 'dart') && !!b.snippet
+  const dialect = b.lang === 'dart' ? 'dart' : b.lang === 'js' || b.lang === 'ts' ? 'js' : null
+  // kod z projektu tylko gdy wykona się czysto; inaczej przykład tego samego pojęcia
+  const ownRuns = !!dialect && !!b.snippet && runnable(b.snippet, dialect)
+  const example = ownRuns ? null : exampleFor([], lesson.conceptIds, dialect)
+  const canSim = ownRuns || !!example
   const toggle = (key: string) => () => io.set(S.view, v => ({ ...v, openSections: v.openSections.includes(key) ? v.openSections.filter(x => x !== key) : [...v.openSections, key] }))
   const first = b.observed.split(/(?<=\.)\s/)[0] ?? b.observed
   const sections: { key: string; title: string; body: string }[] = [
@@ -100,8 +106,8 @@ export function lessonBlock(io: Host, k: Kit, lesson: MentorLesson, open: Set<st
           Co jest pod spodem
         </Button>
         {canSim && withCode && (
-          <Button key="l-sim" onPress={() => loadSim(io, b.snippet, `lekcja: ${main?.name.replace(/\s*\(.*\)$/, '') ?? lesson.title}`, b.lang)}>
-            Krok po kroku
+          <Button key="l-sim" onPress={() => (example ? mentor.showExample(io, example) : loadSim(io, b.snippet, `lekcja: ${main?.name.replace(/\s*\(.*\)$/, '') ?? lesson.title}`, b.lang))}>
+            {example ? 'Na przykładzie' : 'Krok po kroku'}
           </Button>
         )}
         <Button key="l-example" onPress={() => (fuBusy ? undefined : mentor.lessonFollowUp(io, 'example'))}>

@@ -10,7 +10,7 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 
 | Zestaw | Wynik |
 |---|---|
-| Testy pluginu (Change Lab, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 72 / 72 |
+| Testy pluginu (Change Lab, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 77 / 77 |
 | Helper bazy (migracje v1 → v2, model opanowania, współbieżność 8 procesów, eksport i import, historia zmian) | 18 / 18 |
 | Piaskownica SQL | 5 / 5 |
 | Walidacja marketplace i obu pluginów | ✔ |
@@ -50,6 +50,7 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 | Test poziomu | PASS | test: 6/6 poprawnych odpowiedzi zgodnych z tym, co wypisuje symulator. Panel: start, 6 odpowiedzi, wynik 5/6, karta znika |
 | Sekrety w opisie zmiany | PASS | test: klucz API i hasło zmienione w literale nie trafiają do opisu zmiany, listy ani obserwacji, z zapisem kodu i bez. Kontrola: bez poprawki test pada |
 | Uczciwe porównanie A i B | PASS | test: gdy A i B nie mają wspólnej funkcji albo wpisane wywołanie nie istnieje w obu, porównania nie ma, jest komunikat |
+| Przykłady do nauki | PASS | test: każdy z przykładów wykonuje się w całości bez założeń i coś wypisuje (drzewo widgetów osobno). Para `Promise.all` pokazuje start 1, koniec 1, start 2, koniec 2 kontra start 1, start 2, koniec 1, koniec 2, `var`/`let` daje [3, 3, 3] i [0, 1, 2]. Kod z `api.get` i importami nie dostaje „Uruchom”, tylko „Zobacz na przykładzie” |
 | Laboratorium | PASS | test: A/B/C/D na 2 przypadkach, 6/6/7 i „brak `sum`” dla wersji z inną nazwą, oznaczenie różnych wyników, edycja linii, limit 4 wersji, prośba „Sprawdź w projekcie” z przewidywaniem i kodem kopii. Panel: otwarcie w Zmianach, dodanie przypadku, kopia, przejście do kroków. Dart sprawdzony ręcznie: `label(10)` dużo/mało, `async` |
 | Wyrażenia regularne w symulatorze | PASS | test: literały `/…/` z flagami, `replace` z funkcją, `split`, `match`, `test`, `search`, `new RegExp`, `trimEnd`. Dzielenie `(a) / b / 1` i `arr[0] / 2` dalej jest dzieleniem. Laboratorium na kodzie z regexem i `trimEnd` daje wynik zamiast błędu |
 | Pytania bez założeń | PASS | test: pytanie ze zmiany nie powstaje, gdy wynik zależy od zaślepki albo `Math.random` |

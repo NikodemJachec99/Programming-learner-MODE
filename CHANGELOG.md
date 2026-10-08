@@ -12,6 +12,12 @@
 - Symulator rozumie wyrażenia regularne (`/…/g`, `new RegExp`, `replace` z funkcją, `split`, `match`, `test`, `search`) i ma `trimStart`, `trimEnd`, `lastIndexOf` i kilka innych metod napisów. Wcześniej kod z regexem kończył się błędem „Nieznany znak”.
 - „Warto zrozumieć” nie pokazuje podstaw, gdy w zmianie nie ma nic poza nimi.
 
+### Prawdziwy kod czy przykład
+
+- Zmiany pokazują prawdziwy kod (przed, po, wyjaśnienie, testy przez Claude), a Symulator uczy na czystych przykładach.
+- „Zobacz na przykładzie” w zmianie i „Na przykładzie” w lekcji: para A/B dla każdej z 10 rozpoznanych przeróbek i przykład dla 25 pojęć, w tym Dart i drzewo widgetów Fluttera.
+- „Uruchom i porównaj”, „Krok po kroku” i pytanie ze zmiany tylko dla kodu, który wykonuje się bez importów, zaślepek, dopisków i założeń. Kod zależny od reszty projektu nie kończy się już czerwonym błędem, dostaje przykład.
+
 ### Poprawki
 
 - Opis zmiany powstaje z linii po usunięciu sekretów, więc klucz albo hasło zmienione w literale nie trafia do bazy ani panelu, także przy wyłączonym zapisie kodu. Opisy zapisane wcześniej zostają w bazie, czyszczenie ich nie jest częścią tej wersji.

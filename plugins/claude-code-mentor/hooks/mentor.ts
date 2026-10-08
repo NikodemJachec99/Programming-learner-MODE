@@ -32,6 +32,7 @@ import type { LessonInput } from './engine/lessons'
 import { changeQuestion } from './engine/changequiz'
 import { PLACEMENT } from './engine/placement'
 import { caseStatement, nextVariantId } from './engine/bench'
+import type { Example } from './engine/examples'
 import { pairCall } from './sim/autocall'
 import { boundaryQuestion, fromTemplate, gradeChoice, gradeRequest, parseGrade, parseQuiz, predictOutputQuestion, quizRequest } from './engine/quiz'
 import type { Built, Grade } from './engine/quiz'
@@ -503,6 +504,13 @@ export class Mentor {
     })
   }
 
+  /** Przykład do nauki w Symulatorze: para A/B (przed i po przeróbce) albo jeden kod. */
+  async showExample(io: Host, ex: Example): Promise<void> {
+    const pair = ex.before ? { a: ex.before, b: ex.code, aStart: 1, bStart: 1, aLabel: 'przed', bLabel: 'po', hint: '' } : null
+    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect: ex.dialect, source: ex.code, origin: `przykład: ${ex.label}`, note: ex.note, pair, edits: [], cursor: 0, variant: (pair ? 'B' : 'A') as 'A' | 'B', panel: 'state' as const, callArgs: '' }))
+    await io.set(S.tab, () => 'sim' as MentorTab)
+  }
+
   /** „Krok po kroku” dla wybranej wersji i przypadku: pełny symulator w swojej zakładce. */
   async benchStep(io: Host, caseIndex = 0): Promise<void> {
     const lab = await io.get(S.lab)
@@ -512,7 +520,7 @@ export class Mentor {
     if (!b || !c || !v) return
     const dialect = simDialect(c.lang) ?? 'js'
     const call = b.cases[caseIndex]
-    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: v.code, origin: `${c.file}: ${v.id} ${v.label}`, pair: null, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: call ? caseStatement(call, dialect) : '' }))
+    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: v.code, origin: `${c.file}: ${v.id} ${v.label}`, note: undefined, pair: null, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: call ? caseStatement(call, dialect) : '' }))
     await io.set(S.tab, () => 'sim' as MentorTab)
   }
 

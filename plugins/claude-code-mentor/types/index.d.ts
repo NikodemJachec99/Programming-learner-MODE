@@ -196,6 +196,8 @@ export type MentorQuizState = {
 export type MentorSimState = {
   source: string
   origin: string
+  /** Przykład do nauki: na co patrzeć. Pusty dla kodu z projektu. */
+  note?: string
   mode: 'js' | 'sql' | 'cond'
   /** Język kodu w trybie 'js': JavaScript/TypeScript albo Dart. */
   dialect?: 'js' | 'dart'

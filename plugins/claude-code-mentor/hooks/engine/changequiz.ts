@@ -5,16 +5,16 @@ import type { Built } from './quiz'
 import type { ChangeFull } from './change'
 import { simDialect } from './change'
 import { pairCall } from '../sim/autocall'
-import { simulateCached } from '../ui/simcache'
+import { cleanRun } from './runnable'
 
 const SAME = 'Taki sam jak przed zmianą'
 const THROWS = '(program rzuci wyjątek)'
 
 function outputOf(src: string, dialect: 'js' | 'dart'): string | null {
-  const r = simulateCached(src, dialect)
-  // oceniane pytanie nie może stać na zaślepce, fetchu, losowości ani zegarze
-  if (r.assumed) return null
-  if (!r.ok) return r.error && r.error.kind === 'runtime' ? THROWS : null
+  // oceniane pytanie nie może stać na zaślepce, dopiskach do wycinka, fetchu, losowości ani zegarze
+  const r = cleanRun(src, dialect, true)
+  if (!r) return null
+  if (!r.ok) return THROWS
   const out = r.output.join(' | ')
   return out && out.length <= 160 ? out : null
 }
