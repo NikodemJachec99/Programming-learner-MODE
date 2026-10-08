@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="Programming Learner MODE: nauka programowania na Twoim własnym kodzie, wewnątrz Claude Code">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#141413"/>
+      <stop offset="1" stop-color="#1f1d1a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d97757"/>
+      <stop offset="1" stop-color="#e8a55a"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
+    </pattern>
+    <pattern id="dots" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="1.6" height="1.6" fill="#5c5a55"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="400" fill="url(#bg)"/>
+  <rect width="1280" height="400" fill="url(#grid)"/>
+
+  <!-- tekst -->
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, sans-serif">
+    <text x="72" y="118" fill="#e8a55a" font-size="18" font-weight="600" letter-spacing="3">CLAUDE CODE MODS</text>
+    <text x="72" y="178" fill="#f5f4ef" font-size="54" font-weight="700">Programming Learner</text>
+    <text x="72" y="236" fill="url(#accent)" font-size="54" font-weight="800">MODE</text>
+    <text x="72" y="286" fill="#b9b6ad" font-size="21">Ucz się programowania na kodzie, który Claude</text>
+    <text x="72" y="314" fill="#b9b6ad" font-size="21">właśnie napisał w Twoim projekcie.</text>
+    <g font-size="15" fill="#8f8c84">
+      <text x="72" y="356">Lekcje z prawdziwych zmian · Symulator krok po kroku · Model wiedzy w SQLite</text>
+    </g>
+  </g>
+
+  <!-- makieta panelu -->
+  <g transform="translate(760 56)">
+    <rect width="452" height="288" rx="14" fill="#1b1a18" stroke="#3a3833"/>
+    <text x="20" y="32" fill="#f5f4ef" font-family="ui-sans-serif, 'Segoe UI', sans-serif" font-size="14" font-weight="600">Mentor</text>
+    <g font-family="ui-sans-serif, 'Segoe UI', sans-serif" font-size="12">
+      <rect x="20" y="46" width="52" height="22" rx="6" fill="#f5f4ef"/>
+      <text x="31" y="61" fill="#141413">Teraz</text>
+      <rect x="78" y="46" width="84" height="22" rx="6" fill="#2c2a26"/>
+      <text x="88" y="61" fill="#b9b6ad">Zrozum kod</text>
+      <rect x="168" y="46" width="76" height="22" rx="6" fill="#2c2a26"/>
+      <text x="178" y="61" fill="#b9b6ad">Symulator</text>
+      <rect x="250" y="46" width="76" height="22" rx="6" fill="#2c2a26"/>
+      <text x="260" y="61" fill="#b9b6ad">Ćwiczenia</text>
+    </g>
+    <rect x="20" y="82" width="412" height="96" rx="10" fill="none" stroke="#827dbd"/>
+    <g font-family="ui-sans-serif, 'Segoe UI', sans-serif">
+      <text x="34" y="106" fill="#f5f4ef" font-size="14" font-weight="600">Async/await (async/await)</text>
+      <text x="34" y="126" fill="#8f8c84" font-size="12">src/api/users.ts:12 · AI haiku · 2 min temu</text>
+      <text x="34" y="150" fill="#d6d3cb" font-size="12.5">await zawiesza tylko tę funkcję. Reszta programu</text>
+      <text x="34" y="167" fill="#d6d3cb" font-size="12.5">działa dalej, a kontynuacja trafia do mikrozadań.</text>
+    </g>
+    <g font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="12.5">
+      <rect x="20" y="190" width="412" height="80" rx="10" fill="#141413"/>
+      <text x="34" y="214" fill="#5c5a55">12</text><text x="62" y="214" fill="#e8a55a">async function</text><text x="172" y="214" fill="#f5f4ef">fetchUser(id) {</text>
+      <text x="34" y="236" fill="#5c5a55">13</text><text x="78" y="236" fill="#827dbd">const</text><text x="122" y="236" fill="#f5f4ef">res =</text><text x="168" y="236" fill="#e8a55a">await</text><text x="214" y="236" fill="#f5f4ef">fetch(url)</text>
+      <text x="34" y="258" fill="#5c5a55">14</text><text x="78" y="258" fill="#827dbd">return</text><text x="130" y="258" fill="#f5f4ef">res.json()</text>
+      <rect x="20" y="226" width="4" height="16" fill="#e8a55a"/>
+    </g>
+  </g>
+
+  <!-- pasek kontekstu -->
+  <g transform="translate(760 362)" font-family="ui-sans-serif, 'Segoe UI', sans-serif" font-size="13">
+    <rect x="0" y="0" width="8" height="12" fill="#4d4d4d"/>
+    <rect x="8" y="0" width="16" height="12" fill="#c3c2b7"/>
+    <rect x="24" y="0" width="9" height="12" fill="#0891b2"/>
+    <rect x="33" y="0" width="6" height="12" fill="#16a34a"/>
+    <rect x="39" y="0" width="6" height="12" fill="#6da7ec"/>
+    <rect x="45" y="0" width="6" height="12" fill="#c6613f"/>
+    <rect x="51" y="0" width="9" height="12" fill="#db9300"/>
+    <rect x="60" y="0" width="100" height="12" fill="#827dbd"/>
+    <rect x="160" y="0" width="22" height="12" fill="#f5d90a"/>
+    <rect x="182" y="0" width="58" height="12" fill="url(#dots)"/>
+    <text x="252" y="11" fill="#f5d90a" font-weight="700">64% 640k/1000k</text>
+    <text x="362" y="11" fill="#16a34a">· cache 52:10</text>
+  </g>
+</svg>

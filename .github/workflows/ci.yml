@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  helper-tests:
+    name: Helper SQLite i piaskownica SQL
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Testy helpera
+        run: node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
+      - name: Poprawność manifestów
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Filter *.json -Path .claude-plugin, plugins |
+            Where-Object { $_.FullName -notmatch '\\types\\' } |
+            ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null; "ok  $($_.FullName)" }

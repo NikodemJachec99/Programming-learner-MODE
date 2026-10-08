@@ -1,0 +1,11 @@
+{
+  "name": "context-bar",
+  "version": "1.0.0",
+  "description": "Kolorowy pasek okna kontekstu nad promptem: kategorie z dymkami po najechaniu, licznik czasu do wygaśnięcia cache promptu i szybki przycisk do Claude Code Mentor.",
+  "author": { "name": "Nikodem Jachec", "url": "https://github.com/NikodemJachec99" },
+  "homepage": "https://github.com/NikodemJachec99/Programming-learner-MODE",
+  "repository": "https://github.com/NikodemJachec99/Programming-learner-MODE",
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": ["context", "tokens", "prompt-cache", "statusbar"],
+  "types": "./types/index.d.ts"
+}

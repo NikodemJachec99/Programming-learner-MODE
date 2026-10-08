@@ -1,0 +1,11 @@
+# Typy generowane przez silnik Claude Code przy ładowaniu moda
+.claude-plugin/types/
+**/.claude-plugin/types/
+
+node_modules/
+*.log
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+Thumbs.db
