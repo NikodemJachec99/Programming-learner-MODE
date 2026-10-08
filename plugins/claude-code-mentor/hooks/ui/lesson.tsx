@@ -121,7 +121,7 @@ export async function renderLesson(io: Host, k: Kit): Promise<RenderElement> {
     <Box flexDirection="column">
       {picker}
 
-      <Box flexDirection="column" borderStyle="round" borderColor={accent} paddingX={1} marginTop={1}>
+      <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} marginTop={1}>
         <Text bold wrap="wrap">
           {main?.name ?? lesson.title}
         </Text>
@@ -130,20 +130,20 @@ export async function renderLesson(io: Host, k: Kit): Promise<RenderElement> {
         </Text>
         <Box marginTop={1}>{md(k, firstSentence)}</Box>
         {others.length > 0 && <Text dimColor wrap="wrap">{`Też w tej zmianie: ${others.join(', ')}`}</Text>}
-        <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
           <Button key="l-quiz" variant="primary" onPress={() => mentor.startQuiz(io, 'concept', lesson.conceptIds[0])}>
             Sprawdź, czy rozumiem
           </Button>
           {isJs && b.snippet && (
-            <Button key="l-sim" onPress={() => loadSim(io, b.snippet, `lekcja: ${lesson.title}`)}>
+            <Button key="l-sim" plain dimColor onPress={() => loadSim(io, b.snippet, `lekcja: ${lesson.title}`)}>
               Symuluj
             </Button>
           )}
-          <Button key="l-deep" onPress={() => mentor.requestLesson(io, lesson.conceptIds[0], true)}>
+          <Button key="l-deep" plain dimColor onPress={() => mentor.requestLesson(io, lesson.conceptIds[0], true)}>
             Pogłęb
           </Button>
           {lesson.status !== 'read' && (
-            <Button key="l-read" dimColor onPress={() => mentor.markRead(io)}>
+            <Button key="l-read" plain dimColor onPress={() => mentor.markRead(io)}>
               Przeczytane
             </Button>
           )}

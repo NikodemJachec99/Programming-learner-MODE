@@ -205,6 +205,8 @@ export type MentorView = {
   lessonMode: 'points' | 'layers'
   /** Rozwinięte sekcje lekcji (klucze sekcji). */
   openSections: string[]
+  /** Czy lista ostatnich zmian jest rozwinięta. */
+  feedExpanded: boolean
   notice: string | null
   importPath: string
 }

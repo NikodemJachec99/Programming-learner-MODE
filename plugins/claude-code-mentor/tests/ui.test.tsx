@@ -20,13 +20,15 @@ test('B: panel rysuje się na desktopie i w terminalu, zakładki działają', as
     const ui = await $.ui.mount({ ...PANE(), surface })
     expect(await ui.find({ key: 'tab-lesson' })).toBeDefined()
     expect(await ui.find({ key: 'tab-now' })).toBeDefined()
-    for (const tab of ['lesson', 'sim', 'practice', 'knowledge', 'path', 'settings', 'now'] as const) {
+    for (const tab of ['lesson', 'sim', 'practice', 'now'] as const) {
       await ui.press({ key: `tab-${tab}` })
     }
+    for (const tab of ['knowledge', 'path', 'settings'] as const) {
+      await ui.select({ key: 'tab-more', value: tab })
+    }
+    expect(await ui.find({ key: 'tg-autoTeach' })).toBeDefined()
     await ui.press({ key: 'tab-sim' })
     expect(await ui.find({ key: 'sim-step' })).toBeDefined()
-    await ui.press({ key: 'tab-settings' })
-    expect(await ui.find({ key: 'tg-autoTeach' })).toBeDefined()
     await ui.press({ key: 'tab-now' })
     await ui.unmount()
   }

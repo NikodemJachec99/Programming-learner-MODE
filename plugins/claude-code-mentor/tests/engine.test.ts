@@ -139,3 +139,18 @@ test('biblioteka pojęć: graf acykliczny, quizy z poprawnymi kluczami', async (
   const eq = CONCEPTS.find(c => c.id === 'equality')!
   expect(eq.misconceptions.map(m => m.key)).toContain('assign-vs-compare')
 })
+
+test('C: pliki niebędące kodem nie dają fałszywych pojęć', async () => {
+  const prose = lines('Claude cache i API, async await, SELECT * FROM users; secret token')
+  expect(detectConcepts('markdown', prose, 'README.md')).toEqual([])
+  expect(detectConcepts('', prose, 'C:/p/LICENSE')).toEqual([])
+  expect(detectConcepts('gitignore', lines('*.db\n.claude-plugin/types/'), 'C:/p/.gitignore')).toEqual([])
+  // konfiguracja CI: tylko pojęcia DevOps, nie "API modeli językowych"
+  const ci = detectConcepts('yaml', lines('jobs:\n  test:\n    runs-on: windows-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: claude plugin test'), '.github/workflows/ci.yml').map(h => h.id)
+  expect(ci).toContain('ci-cd')
+  expect(ci).not.toContain('llm-api')
+  // git: odczyty to szum, commit to zmiana
+  expect(classifyCommand('git grep -n foo').kind).toBe('bash')
+  expect(classifyCommand('git status').kind).toBe('bash')
+  expect(classifyCommand('git commit -m "x"').kind).toBe('git')
+})

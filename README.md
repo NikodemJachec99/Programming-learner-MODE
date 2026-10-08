@@ -6,7 +6,7 @@
   <a href="#instalacja"><img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-mod-d97757?style=flat-square"></a>
   <a href="#wymagania"><img alt="Windows 11" src="https://img.shields.io/badge/Windows-11-0078d4?style=flat-square"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-46%20%2F%2046-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-47%20%2F%2047-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
 </p>
 
@@ -298,7 +298,7 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/claude-code-mentor`: symulator, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 26 / 26 |
+| `claude plugin test plugins/claude-code-mentor`: symulator, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 27 / 27 |
 | `node --test` helpera bazy: migracje, model opanowania, 8 procesów równolegle, eksport i import, idempotencja | 15 / 15 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |
