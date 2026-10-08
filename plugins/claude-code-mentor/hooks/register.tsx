@@ -6,7 +6,7 @@
 // API modów dopuszcza `$` tylko jako `$.rzeczownik.metoda(...)`, dlatego hooki
 // budują tu adapter Host z domknięć, a reszta kodu dostaje adapter.
 
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 import type { MentorTab } from '../types'
 import { offlineHost, stateOps } from './host'
 import type { Host } from './host'
@@ -32,6 +32,59 @@ const HELP = [
 /** Adapter sesji: zbudowany w session.start, używany przez obserwacje i timery. */
 let HOST: Host | null = null
 
+/** Adapter na `$` danego zdarzenia (funkcja w tym samym pliku, jak pozwala API modów). */
+function makeHost($: EngineInterface): Host {
+  return {
+    ...stateOps(() => $.ui.invalidate('ui.render')),
+    now: () => $.clock.now(),
+    sessionId: () => $.session.id(),
+    sessionRoot: () => $.session.root(),
+    version: async () => (await $.session.version()).version,
+    isGitRepo: async () => (await $.session.repo()) !== null,
+    surfaces: () => $.session.surfaces(),
+    localAppData: () => $.env.get('LOCALAPPDATA'),
+    pluginRoot: $.plugin.root,
+    fsRead: path => $.fs.read(path),
+    fsExists: path => $.fs.exists(path),
+    run: (argv, init) => $.process.run(argv, init),
+    storeGet: key => $.store.get(key),
+    storeSet: (key, value) => $.store.set(key, value),
+    storeDelete: key => $.store.delete(key),
+    complete: req => $.model.complete(req),
+    log: text => $.ui.log(text, { to: 'debug' }),
+    toast: text => $.ui.toast(text),
+    openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
+    panes: () => $.ui.panes(),
+    selection: () => $.ui.selection(),
+  }
+}
+
+/**
+ * Start sesji Mentora: adapter, timer kolejki lekcji, baza. Wołane z session.start,
+ * a leniwie z pierwszego zdarzenia po /reload-plugins, które session.start nie wywołuje.
+ */
+function startSession($: EngineInterface, cwd: string | null, surface: string | null, openPane: boolean): Host {
+  const io = makeHost($)
+  HOST = io
+  $.clock.every(3000, () => {
+    void mentor.tick(io).catch(err => $.ui.log(`claude-code-mentor: kolejka: ${String(err)}`, { to: 'debug' }))
+  })
+  void (async () => {
+    try {
+      await mentor.boot(io, cwd ?? (await $.session.cwd()), surface)
+      if (openPane && mentor.getSettings().autoOpen) await $.ui.open({ id: PANE_ID, title: PANE_TITLE })
+    } catch (err) {
+      $.ui.log(`claude-code-mentor: start: ${String(err)}`, { to: 'debug' })
+    }
+  })()
+  return io
+}
+
+/** Adapter sesji albo start, gdy moduł przeładowano bez session.start. */
+function ensureSession($: EngineInterface): Host {
+  return HOST ?? startSession($, null, null, false)
+}
+
 /** Adapter jednego zdarzenia: jego własne get/set/now (i UI) na bazie adaptera sesji. */
 function scoped(over: Partial<Host> & Pick<Host, 'get' | 'set' | 'now' | 'invalidate'>): Host {
   return { ...(HOST ?? offlineHost(over)), ...over }
@@ -40,30 +93,6 @@ function scoped(over: Partial<Host> & Pick<Host, 'get' | 'set' | 'now' | 'invali
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    const io: Host = {
-      ...stateOps(() => $.ui.invalidate('ui.render')),
-      now: () => $.clock.now(),
-      sessionId: () => $.session.id(),
-      sessionRoot: () => $.session.root(),
-      version: async () => (await $.session.version()).version,
-      isGitRepo: async () => (await $.session.repo()) !== null,
-      surfaces: () => $.session.surfaces(),
-      localAppData: () => $.env.get('LOCALAPPDATA'),
-      pluginRoot: $.plugin.root,
-      fsRead: path => $.fs.read(path),
-      fsExists: path => $.fs.exists(path),
-      run: (argv, init) => $.process.run(argv, init),
-      storeGet: key => $.store.get(key),
-      storeSet: (key, value) => $.store.set(key, value),
-      storeDelete: key => $.store.delete(key),
-      complete: req => $.model.complete(req),
-      log: text => $.ui.log(text, { to: 'debug' }),
-      toast: text => $.ui.toast(text),
-      openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
-      panes: () => $.ui.panes(),
-      selection: () => $.ui.selection(),
-    }
-    HOST = io
     try {
       await $.command.register({
         name: 'mentor',
@@ -75,22 +104,13 @@ export const register: Register = on => {
       $.ui.log(`claude-code-mentor: rejestracja /mentor: ${String(err)}`, { to: 'debug' })
     }
     // Start w tle: sesja nie czeka na bazę.
-    void (async () => {
-      try {
-        await mentor.boot(io, e.cwd, e.surface)
-        if (mentor.getSettings().autoOpen) await $.ui.open({ id: PANE_ID, title: PANE_TITLE })
-      } catch (err) {
-        $.ui.log(`claude-code-mentor: start: ${String(err)}`, { to: 'debug' })
-      }
-    })()
-    $.clock.every(3000, () => {
-      void mentor.tick(io).catch(err => $.ui.log(`claude-code-mentor: kolejka: ${String(err)}`, { to: 'debug' }))
-    })
+    startSession($, e.cwd, e.surface, true)
     return started
   })
 
   on('prompt.submit', ($, e, next) => {
     try {
+      ensureSession($)
       if (e.origin.kind !== 'plugin') mentor.onPrompt(e.text)
     } catch {
       /* obserwacja nie może blokować promptu */
@@ -100,7 +120,7 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
-    const io = HOST
+    const io = OBSERVED.has(String(e.tool)) ? ensureSession($) : HOST
     if (io && OBSERVED.has(String(e.tool))) {
       try {
         await mentor.onTool(io, String(e.tool), e as unknown as Record<string, unknown>, ran as { isError?: true; deny?: string; result?: unknown; text?: string })
@@ -113,14 +133,15 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    const io = HOST
-    if (io && e.agentId === undefined && !e.isAborted) {
+    const io = ensureSession($)
+    if (e.agentId === undefined && !e.isAborted) {
       void mentor.onTurnComplete(io, e.answer).catch(err => $.ui.log(`claude-code-mentor: analiza tury: ${String(err)}`, { to: 'debug' }))
     }
     return result
   })
 
   on('command.run', { command: 'mentor' }, async ($, e) => {
+    ensureSession($)
     const io = scoped({
       ...stateOps(() => $.ui.invalidate('ui.render')),
       now: () => $.clock.now(),

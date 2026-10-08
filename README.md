@@ -6,7 +6,7 @@
   <a href="#instalacja"><img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-mod-d97757?style=flat-square"></a>
   <a href="#wymagania"><img alt="Windows 11" src="https://img.shields.io/badge/Windows-11-0078d4?style=flat-square"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-47%20%2F%2047-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-49%20%2F%2049-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
 </p>
 
@@ -167,16 +167,30 @@ pwsh -File scripts\diagnose.ps1               # diagnostyka, niczego nie zmienia
 
 ## Claude Code Mentor
 
-<p align="center">
-  <img src="docs/assets/mentor-lesson.png" alt="Lekcja w panelu Mentor" width="520">
-</p>
+<table>
+  <tr>
+    <td width="50%" valign="top" align="center">
+      <img src="docs/assets/mentor-lesson.png" alt="Lekcja AI o async/await na prawdziwym pliku z projektu" width="100%"><br>
+      <sub><b>Lekcja</b>: kod z projektu z numerami linii, mechanizm krok po kroku, sekcje do rozwinięcia</sub>
+    </td>
+    <td width="50%" valign="top" align="center">
+      <img src="docs/assets/mentor-now.png" alt="Zakładka Teraz" width="100%"><br>
+      <sub><b>Teraz</b>: najważniejsza rzecz do zrozumienia, brakujące podstawy, ostatnie zmiany Claude</sub>
+      <br><br>
+      <img src="docs/assets/mentor-simulator.png" alt="Symulator async/await z kolejkami event loop" width="100%"><br>
+      <sub><b>Symulator</b>: async/await krok po kroku, kolejki mikro i makro, wyjście</sub>
+    </td>
+  </tr>
+</table>
 
-### Siedem zakładek
+### Siedem widoków
+
+Główne zakładki to **Teraz**, **Lekcja**, **Symulator** i **Ćwiczenia**. Pozostałe są w menu **Więcej**.
 
 | Zakładka | Co zawiera |
 |---|---|
 | **Teraz** | projekt, ostatnie operacje Claude (plik, linia, +/−), wykryte mechanizmy, najważniejsza rzecz do zrozumienia, brakujące podstawy, powtórki |
-| **Zrozum kod** | lekcja o konkretnej zmianie w dwóch widokach: *Analiza zmiany* (co, gdzie, po co, składnia, mechanizm, zależności, dlaczego, alternatywy, błędy, weryfikacja) albo *Nauka warstwami* (intuicja, kod, mechanizm, dlaczego, praktyka, sprawdzenie) |
+| **Lekcja** | lekcja o konkretnej zmianie w dwóch widokach: *Analiza zmiany* (co, gdzie, po co, składnia, mechanizm, zależności, dlaczego, alternatywy, błędy, weryfikacja) albo *Nauka warstwami* (intuicja, kod, mechanizm, dlaczego, praktyka, sprawdzenie) |
 | **Symulator** | wykonanie krok po kroku, eksplorator warunków dla JS, Pythona i PHP, piaskownica SQL |
 | **Ćwiczenia** | pytania o Twój kod, ocena, wykryte nieporozumienia, przykład z innej strony, zadanie utrwalające |
 | **Moja wiedza** | pojęcia na 5 poziomach, opanowanie, pewność oceny, historia, błędne przekonania |
@@ -298,7 +312,7 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/claude-code-mentor`: symulator, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 27 / 27 |
+| `claude plugin test plugins/claude-code-mentor`: symulator, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 29 / 29 |
 | `node --test` helpera bazy: migracje, model opanowania, 8 procesów równolegle, eksport i import, idempotencja | 15 / 15 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |
