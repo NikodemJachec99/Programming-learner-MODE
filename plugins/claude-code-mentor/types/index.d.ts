@@ -200,6 +200,8 @@ export type MentorSimState = {
   note?: string
   /** Trwa odtwarzanie krok po kroku (animacja). */
   playing?: boolean
+  /** Tempo odtwarzania; domyślnie wolno. */
+  speed?: 'slow' | 'normal' | 'fast'
   mode: 'js' | 'sql' | 'cond'
   /** Język kodu w trybie 'js': JavaScript/TypeScript albo Dart. */
   dialect?: 'js' | 'dart'

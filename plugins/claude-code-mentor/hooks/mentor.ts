@@ -100,6 +100,10 @@ export function suggestCall(code: string, unified: string, dialect: 'js' | 'dart
   return { call: '', hint: `${name}(…)` }
 }
 
+/** Pauza między krokami odtwarzania w Symulatorze. */
+export const SPEED_MS = { slow: 1800, normal: 1000, fast: 450 } as const
+export const SPEED_LABEL = { slow: 'wolno', normal: 'średnio', fast: 'szybko' } as const
+
 export class Mentor {
   ctx: DbCtx | null = null
   projectId = ''
@@ -493,6 +497,11 @@ export class Mentor {
 
   private animToken = 0
 
+  /** Zmiana tempa działa od następnego kroku, także w trakcie odtwarzania. */
+  async cycleSpeed(io: Host): Promise<void> {
+    await io.set(S.sim, s => ({ ...s, speed: s.speed === 'fast' ? ('slow' as const) : s.speed === 'normal' ? ('fast' as const) : ('normal' as const) }))
+  }
+
   /**
    * Animacja uruchomienia laboratorium: komórki wyniku odsłaniają się po kolei, a liczona
    * pokazuje, którą linię właśnie wykonuje. Nowe uruchomienie albo zamknięcie przerywa starą.
@@ -504,28 +513,27 @@ export class Mentor {
       for (let f = 0; f < frames; f++) {
         if (!(await alive())) return
         await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: idx, frame: f } } : l))
-        if (!(await io.sleep(90))) return
+        if (!(await io.sleep(320))) return
       }
     }
     if (await alive()) await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: undefined, frame: undefined } } : l))
   }
 
   /**
-   * Odtwarzanie w Symulatorze: kursor idzie sam, krok po kroku, w tempie dopasowanym do długości
-   * programu (około 8 s na całość, nie szybciej niż 70 ms i nie wolniej niż 600 ms na krok).
+   * Odtwarzanie w Symulatorze: kursor idzie sam, krok po kroku. Tempo stałe na krok, żeby dało się
+   * śledzić linię, zmienne i wyjście: wolno 1,8 s, średnio 1 s, szybko 0,45 s.
    */
   async playSim(io: Host, total?: number): Promise<void> {
     const sim = await io.get(S.sim)
     if (sim.playing) return void (await io.set(S.sim, s => ({ ...s, playing: false })))
     total ??= simTotal(sim)
     const token = ++this.animToken
-    const delay = Math.max(70, Math.min(600, Math.round(8000 / Math.max(1, total))))
     await io.set(S.sim, s => ({ ...s, playing: true, cursor: s.cursor >= total - 1 ? 0 : s.cursor }))
     while (token === this.animToken) {
       const s = await io.get(S.sim)
       if (!s.playing) return
       if (s.cursor >= total - 1) break
-      if (!(await io.sleep(delay))) return
+      if (!(await io.sleep(SPEED_MS[(await io.get(S.sim)).speed ?? 'slow']))) return
       if (token !== this.animToken || !(await io.get(S.sim)).playing) return
       await io.set(S.sim, x => ({ ...x, cursor: Math.min(total - 1, x.cursor + 1) }))
     }

@@ -4,7 +4,7 @@
 import type { Host } from '../host'
 import type { RenderElement } from 'claude-code'
 import type { MentorSimState } from '../../types'
-import { mentor } from '../mentor'
+import { SPEED_LABEL, mentor } from '../mentor'
 import { detectConcepts } from '../engine/detect'
 import { BOUNDARY_NOTE, dialectOps, program, simSites, simulateCached } from './simcache'
 import type { Dialect } from './simcache'
@@ -34,7 +34,7 @@ export function progressBar(done: number, total: number, width = 16): string {
   return `${'▰'.repeat(n)}${'▱'.repeat(width - n)}`
 }
 
-function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B', paired: boolean, playing: boolean): RenderElement {
+function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B', paired: boolean, playing: boolean, speed: 'slow' | 'normal' | 'fast'): RenderElement {
   const { Box, Button, Text } = k.E
   // każdy ręczny ruch zatrzymuje odtwarzanie
   const set = (fn: (s: MentorSimState) => MentorSimState) => () => (mentor.stopPlay(), io.set(S.sim, s => ({ ...fn(s), playing: false })))
@@ -55,6 +55,9 @@ function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean
       </Button>
       <Button key="sim-run" plain dimColor onPress={set(s => ({ ...s, cursor: total - 1 }))}>
         ⏭
+      </Button>
+      <Button key="sim-speed" plain dimColor onPress={() => mentor.cycleSpeed(io)}>
+        {`tempo: ${SPEED_LABEL[speed]}`}
       </Button>
       {hasB && (
         <Button key="sim-compare" onPress={set(s => ({ ...s, panel: s.panel === 'compare' ? 'state' : 'compare' }))}>
@@ -209,7 +212,7 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
       {pc?.problem && <Text color="warning" wrap="wrap">{pc.problem}</Text>}
       {badCall && <Text color="warning" wrap="wrap">{`„${typed}” to nie jest wywołanie funkcji${auto ? `, więc uruchamiam ${auto.label}. Wpisz np. ${auto.label}` : '. Wpisz np. nazwa(1, 2)'}.`}</Text>}
       <Input key="sim-call" label={pair ? 'Wywołanie (A i B):' : 'Wywołanie:'} placeholder={auto ? auto.label : pair?.hint ? pair.hint : 'np. add(2, 3)'} value={s.callArgs} submitLabel="uruchom" onSubmit={value => io.set(S.sim, x => ({ ...x, callArgs: value, cursor: 0 }))} />
-      {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair, !!s.playing)}
+      {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair, !!s.playing, s.speed ?? 'slow')}
       {panel}
       {r.error && r.error.kind !== 'syntax' && <Text color="error" wrap="wrap">{r.error.message}</Text>}
       {r.hypotheses.length > 0 && card(k, 'warning', <Text color="warning">Założenia symulatora</Text>, ...r.hypotheses.map((x, i) => <Text key={`hy-${i}`} dimColor wrap="wrap">{`• ${x}`}</Text>))}
