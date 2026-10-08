@@ -19,6 +19,10 @@ export type Host = {
   surfaces: () => Promise<readonly string[]>
   /** Katalog danych Mentora: Windows %LOCALAPPDATA%, macOS ~/Library/Application Support, Linux XDG. */
   dataDir: () => Promise<string | undefined>
+  /** Wstawia tekst do pola wiadomości (wysyła użytkownik Enterem). False, gdy nie ma pola. */
+  fillPrompt: (text: string) => Promise<boolean>
+  /** Wersja Mentora zapisana w instalacji Claude Code; null, gdy nie da się odczytać. */
+  installedVersion: () => Promise<string | null>
   pluginRoot: string
   fsRead: (path: string) => Promise<string>
   fsExists: (path: string) => Promise<boolean>
@@ -58,6 +62,8 @@ export function offlineHost(base: Pick<Host, 'get' | 'set' | 'now' | 'invalidate
     isGitRepo: () => Promise.resolve(false),
     surfaces: () => Promise.resolve([]),
     dataDir: () => Promise.resolve(undefined),
+    fillPrompt: () => Promise.resolve(false),
+    installedVersion: () => Promise.resolve(null),
     pluginRoot: '',
     fsRead: no,
     fsExists: () => Promise.resolve(false),

@@ -3,26 +3,27 @@ import type { Host } from '../host'
 import type { MentorTab } from '../../types'
 import { conceptById } from '../mentor'
 import type { El, Kit } from './kit'
+import { renderChanges } from './changes'
 import { renderKnowledge } from './knowledge'
 import { renderLesson } from './lesson'
-import { renderNow } from './now'
 import { renderPath } from './path'
 import { renderPractice } from './practice'
 import { renderSettings } from './settings'
 import { renderSim } from './sim'
 import { S } from './state'
+import { MENTOR_VERSION, isNewer } from '../version'
 
 export const PANE_ID = 'mentor'
-export const PANE_TITLE = 'Mentor'
+export const PANE_TITLE = `Claude Code Mentor ${MENTOR_VERSION}`
 
-/** Cztery główne zakładki w pasku; reszta w menu "Więcej", żeby pasek nie zawijał się do 2 linii. */
+/** Trzy główne zakładki w pasku; reszta w menu "Więcej". Wszystko zaczyna się od Zmian. */
 const TABS: { id: MentorTab; label: string }[] = [
-  { id: 'now', label: 'Teraz' },
-  { id: 'lesson', label: 'Lekcja' },
-  { id: 'sim', label: 'Symulator' },
+  { id: 'changes', label: 'Zmiany' },
   { id: 'practice', label: 'Ćwiczenia' },
+  { id: 'sim', label: 'Symulator' },
 ]
 const MORE: { id: MentorTab; label: string }[] = [
+  { id: 'lesson', label: 'Lekcje' },
   { id: 'knowledge', label: 'Moja wiedza' },
   { id: 'path', label: 'Ścieżka nauki' },
   { id: 'settings', label: 'Ustawienia' },
@@ -35,11 +36,14 @@ export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: 
   const unseen = await io.get(S.unseen)
   const quiz = await io.get(S.quiz)
   const settings = await io.get(S.settings)
+  const boot = await io.get(S.boot)
+  const stale = !!boot.installedVersion && isNewer(boot.installedVersion, MENTOR_VERSION)
   let body: RenderElement
   try {
     switch (tab) {
+      case 'changes':
       case 'now':
-        body = await renderNow(io, k)
+        body = await renderChanges(io, k)
         break
       case 'lesson':
         body = await renderLesson(io, k)
@@ -64,10 +68,11 @@ export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: 
   }
   return (
     <Box flexDirection="column">
+      {stale && <Text color="warning" wrap="wrap">{`Zainstalowana jest nowsza wersja ${boot.installedVersion}, a ta sesja działa na ${MENTOR_VERSION}. Wpisz /reload-plugins albo otwórz nową sesję.`}</Text>}
       {settings.paused && <Text color="warning">Pauza: automatyczne lekcje wstrzymane (/mentor resume)</Text>}
       <Box flexDirection="row" flexWrap="nowrap" columnGap={1} alignItems="center" marginBottom={1}>
         {TABS.map(t => {
-          const badge = t.id === 'lesson' && unseen > 0 ? ` ${unseen}` : t.id === 'practice' && quiz?.status === 'asking' ? ' •' : ''
+          const badge = t.id === 'practice' && quiz?.status === 'asking' ? ' •' : ''
           const active = tab === t.id
           return (
             <Button
@@ -75,10 +80,7 @@ export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: 
               variant={active ? 'primary' : undefined}
               plain={active ? undefined : true}
               dimColor={!active}
-              onPress={async () => {
-                await io.set(S.tab, () => t.id)
-                if (t.id === 'lesson') await io.set(S.unseen, () => 0)
-              }}
+              onPress={() => io.set(S.tab, () => t.id)}
             >
               {t.label + badge}
             </Button>
@@ -87,8 +89,12 @@ export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: 
         <Select
           key="tab-more"
           value={MORE.some(m => m.id === tab) ? tab : 'more'}
-          options={[{ value: 'more', label: 'Więcej' }, ...MORE.map(m => ({ value: m.id, label: m.label }))]}
-          onSelect={v => (v === 'more' ? undefined : io.set(S.tab, () => v as MentorTab))}
+          options={[{ value: 'more', label: unseen > 0 ? `Więcej · nowe: ${unseen}` : 'Więcej' }, ...MORE.map(m => ({ value: m.id, label: m.id === 'lesson' && unseen > 0 ? `Lekcje (${unseen})` : m.label }))]}
+          onSelect={async v => {
+            if (v === 'more') return
+            await io.set(S.tab, () => v as MentorTab)
+            if (v === 'lesson') await io.set(S.unseen, () => 0)
+          }}
         />
       </Box>
       {body}
@@ -114,7 +120,7 @@ export async function renderBand(io: Host, E: El): Promise<RenderElement | null>
         plain
         dimColor
         onPress={async () => {
-          await io.set(S.tab, () => (unseen ? 'lesson' : 'now') as MentorTab)
+          await io.set(S.tab, () => (unseen ? 'lesson' : 'changes') as MentorTab)
           await io.set(S.unseen, () => 0)
           await io.openPane()
         }}

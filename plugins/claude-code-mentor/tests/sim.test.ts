@@ -128,3 +128,21 @@ test('let w pętli for: każda iteracja ma własne powiązanie (domknięcia)', a
   const r = simulate('const fs = []\nfor (let i = 0; i < 3; i++) {\n  fs.push(() => i)\n}\nconsole.log(fs.map(f => f()).join(","))')
   expect(r.output).toEqual(['0,1,2'])
 })
+
+test('wycinek z lekcji: domknięte bloki i zaślepki zamiast błędu składni lub ReferenceError', async () => {
+  const { simulateCached } = await import('../hooks/ui/simcache')
+  const { healJs } = await import('../hooks/sim/heal')
+  const frag = '    if (base) await $.fs.write(`${base}/x.json`, JSON.stringify(state))\n  } catch (err) {\n    state.error = String(err)\n  }'
+  const healed = healJs(frag)
+  expect(healed.source.split('\n').length).toBe(frag.split('\n').length)
+  expect(healed.source.startsWith('try { ')).toBe(true)
+  const r = simulateCached(frag, 'js')
+  expect(r.ok).toBe(true)
+  expect(r.hypotheses.join(' ')).toContain('`base`, `$`, `state`')
+  expect(r.hypotheses.join(' ')).toContain('try {')
+  const loop = simulateCached("      } else {\n        console.log('b')\n      }\n    }\n    for (let i = 0; i < 3; i++) {\n      console.log(i)", 'js')
+  expect(loop.ok).toBe(true)
+  expect(loop.output).toEqual(['0', '1', '2'])
+  // bez trybu zaślepek semantyka JS zostaje: nieznana nazwa to ReferenceError
+  expect(simulate('console.log(nieMa)').error?.message).toMatch(/ReferenceError: nieMa is not defined/)
+})

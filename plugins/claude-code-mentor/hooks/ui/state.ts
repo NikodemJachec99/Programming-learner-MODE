@@ -8,10 +8,12 @@ import type {
   MentorFocus,
   MentorJob,
   MentorKnowledgeRow,
+  MentorLab,
   MentorLesson,
   MentorLessonMeta,
   MentorMisconception,
   MentorObservation,
+  MentorPlacement,
   MentorQuizKey,
   MentorQuizState,
   MentorSettings,
@@ -20,6 +22,8 @@ import type {
   MentorUsage,
   MentorView,
 } from '../../types'
+import type { ChangeMeta } from '../engine/change'
+import type { BarSnapshot } from './bar'
 
 export const DEFAULT_SETTINGS: MentorSettings = {
   autoTeach: true,
@@ -35,6 +39,9 @@ export const DEFAULT_SETTINGS: MentorSettings = {
   model: 'haiku',
   sendCode: 'redacted',
   maxSnippetLines: 80,
+  saveChanges: true,
+  contextBar: true,
+  cacheTtl: 60,
 }
 
 export const DEFAULT_SIM: MentorSimState = {
@@ -55,7 +62,10 @@ export const DEFAULT_SIM: MentorSimState = {
   condLeft: '7',
   condRight: '10',
   callArgs: '',
+  pair: null,
 }
+
+export const DEFAULT_LAB: MentorLab = { selected: null, view: 'diff', loading: false, error: null, showAll: false, alt: { status: 'idle', forId: null, items: [], message: '' }, confirm: null, handed: null, guess: null }
 
 export const DEFAULT_BOOT: MentorBoot = { status: 'starting', messages: [], dataDir: '', node: '', sessionId: '', project: null, engine: '', schemaVersion: 0, pending: 0 }
 
@@ -76,6 +86,10 @@ export type StateShape = {
   usage: MentorUsage
   view: MentorView
   unseen: number
+  changes: ChangeMeta[]
+  lab: MentorLab
+  bar: { snap: BarSnapshot | null; lastRequestAt: number }
+  placement: MentorPlacement
 }
 export type StateKey = keyof StateShape
 
@@ -96,10 +110,14 @@ export const S = {
   usage: 'usage',
   view: 'view',
   unseen: 'unseen',
+  changes: 'changes',
+  lab: 'lab',
+  bar: 'bar',
+  placement: 'placement',
 } as const satisfies Record<StateKey, StateKey>
 
 const initial = (): StateShape => ({
-  tab: 'now',
+  tab: 'changes',
   boot: DEFAULT_BOOT,
   settings: DEFAULT_SETTINGS,
   feed: [],
@@ -115,6 +133,10 @@ const initial = (): StateShape => ({
   usage: { autoCalls: 0, manualCalls: 0, tokens: 0, limitCalls: 0, limitTokens: 0, breakerUntil: 0 },
   view: { knowledgeFilter: -1, conceptDetail: null, confirm: null, pathMode: 'list', lessonMode: 'points', openSections: ['observed', 'mechanism', 'why', 'l-intuition', 'l-code', 'l-mechanism'], notice: null, importPath: '', feedExpanded: false },
   unseen: 0,
+  changes: [],
+  lab: DEFAULT_LAB,
+  bar: { snap: null, lastRequestAt: 0 },
+  placement: { status: 'none', index: 0, answers: [], last: null },
 })
 
 const mem: StateShape = initial()

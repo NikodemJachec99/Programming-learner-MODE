@@ -17,7 +17,7 @@ export type DbCtx = {
 const PENDING_KEY = 'pendingOps'
 const PENDING_MAX = 400
 const WRITE_OPS = new Set([
-  'addObservations', 'recordEvidence', 'recordExposure', 'saveLesson', 'markLesson', 'cachePut', 'commitUsage',
+  'addObservations', 'saveChange', 'recordEvidence', 'recordExposure', 'saveLesson', 'markLesson', 'cachePut', 'commitUsage',
   'saveExercise', 'gradeExercise', 'setNotes', 'setSettings',
 ])
 

@@ -1,14 +1,29 @@
-import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+// Pasek kontekstu nad promptem (dawny osobny mod context-bar): kategorie okna
+// kontekstu z dymkami na desktopie, procent zajętości, licznik cache promptu
+// i przycisk Mentor. Czyste rysowanie: dane podaje register.tsx.
 
-import type { BarRow, Snapshot } from '../types'
+import type { RenderElement } from 'claude-code'
+import type { Elements } from 'claude-code'
+import type { El } from './kit'
 
-const isOn = atom({ plugin: 'context-bar', key: 'isOn' } as const, true)
-const snapshot = atom({ plugin: 'context-bar', key: 'snapshot' } as const, null)
-/** Kiedy skończyła się ostatnia odpowiedź modelu (ostatnie odświeżenie cache promptu); 0 = jeszcze nie było. */
-const lastRequestAt = atom({ plugin: 'context-bar', key: 'lastRequestAt' } as const, 0)
-/** Czas życia cache promptu w minutach (5 albo 60); trwała kopia w $.store. */
-const ttlMinutes = atom({ plugin: 'context-bar', key: 'ttlMinutes' } as const, 60)
+/** Jedna kategoria z /context. */
+export type BarRow = { name: string; tokens: number; color: string; kind: 'used' | 'free' | 'buffer' }
+
+/** Ostatnio odczytany rozkład okna kontekstu. */
+export type BarSnapshot = { rows: BarRow[]; totalTokens: number; maxTokens: number; percentage: number }
+type Snapshot = BarSnapshot
+
+export type BarOptions = {
+  snap: BarSnapshot
+  columns: number
+  isWorking: boolean
+  ttlMinutes: number
+  lastRequestAt: number
+  now: number
+  /** Element Svg na desktopie i w VS Code; w terminalu brak (pasek tekstowy). */
+  Svg?: Elements['desktop']['Svg']
+  onMentor: () => unknown
+}
 
 /**
  * Warning zones, lowest first: past a zone's mark the used cells beyond it take its color,
@@ -130,119 +145,26 @@ const barSvg = (snap: Snapshot, widthPx: number): string => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${h}" viewBox="0 0 ${widthPx} ${h}" shape-rendering="crispEdges">${parts.join('')}</svg>`
 }
 
-let isBusy = false
-let isDirty = false
-
-// The breakdown /context draws, estimated locally ('summary'), so it costs no API call.
-// A call that lands while one is running marks it dirty; the running one reads again.
-async function refresh($: EngineInterface): Promise<void> {
-  if (isBusy) {
-    isDirty = true
-    return
-  }
-  isBusy = true
-  try {
-    do {
-      isDirty = false
-      const usage = await $.session.usage({ breakdown: 'summary' })
-      const breakdown = usage.context.breakdown
-      if (!breakdown) continue
-      const rows: BarRow[] = breakdown.categories
-        .filter((category: { kind: string; tokens: number }) => category.kind !== 'deferred' && category.tokens > 0)
-        .map((category: { name: string; tokens: number; color: string; kind: string }) => ({
-          name: category.name,
-          tokens: category.tokens,
-          color: category.color,
-          kind: category.kind as BarRow['kind'],
-        }))
-      const fresh: Snapshot = {
-        rows,
-        totalTokens: breakdown.totalTokens,
-        maxTokens: breakdown.maxTokens,
-        percentage: breakdown.percentage,
-      }
-      await update($, snapshot, () => fresh)
-    } while (isDirty)
-  } finally {
-    isBusy = false
-  }
-}
-
-export const register: Register = on => {
-  on('session.start', async ($, e, next) => {
-    await $.command.register({
-      name: 'context-bar',
-      description: 'Pasek kontekstu nad promptem: przełącz, albo /context-bar ttl 5|60 (czas cache w minutach)',
-      argumentHint: '[ttl 5|60]',
-      immediate: true,
-    })
-    const result = await next(e)
-    // Pasek pod promptem z poprzedniej wersji: zdejmij, jeśli został.
-    $.ui.status(undefined)
-    const savedTtl = Number(await $.store.get('ttlMinutes'))
-    if (savedTtl > 0) await update($, ttlMinutes, () => savedTtl)
-    if (await read($, isOn)) void refresh($)
-    // Odliczanie cache: przerysowanie paska co 5 s (tylko ten plugin, bez wywołań API).
-    $.clock.every(5000, () => $.ui.invalidate('ui.render'))
-    return result
-  })
-
-  on('command.run', { command: 'context-bar' }, async ($, e) => {
-    const args = e.args.trim().split(/\s+/)
-    if (args[0] === 'ttl') {
-      const minutes = Number(args[1])
-      if (minutes !== 5 && minutes !== 60) return { text: 'Użycie: /context-bar ttl 5  albo  /context-bar ttl 60' }
-      await update($, ttlMinutes, () => minutes)
-      await $.store.set('ttlMinutes', minutes)
-      return { text: `Czas cache ustawiony na ${minutes} min.` }
-    }
-    const now = await update($, isOn, value => !value)
-    if (now) void refresh($)
-    return { text: now ? 'Context bar on.' : 'Context bar off.' }
-  })
-
-  // The fill moved (a response, a compaction): read the categories again.
-  on('session.measure', async ($, e, next) => {
-    const result = await next(e)
-    if (e.changed.includes('context') && (await read($, isOn))) void refresh($)
-    return result
-  })
-
-  // Koniec odpowiedzi modelu w głównej pętli: ostatnie zapytanie odświeżyło cache promptu.
-  on('turn.complete', async ($, e, next) => {
-    const result = await next(e)
-    if (e.agentId === undefined) {
-      const at = await $.clock.now()
-      await update($, lastRequestAt, () => at)
-    }
-    return result
-  })
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || !(await read($, isOn))) return next(e)
-    const snap = await read($, snapshot)
-    if (!snap || snap.rows.length === 0) return next(e)
-
-    const { Box, Text, Button } = $.ui.resolve(e)
+export function renderBar(E: El, o: BarOptions): RenderElement {
+    const snap = o.snap
+    const columns = o.columns
+    const { Box, Text, Button } = E
     // Miejsce na pasek w komórkach: bodyColumns to pole, w którym rysuje pasek nad promptem.
-    const columns = e.props.bodyColumns || e.viewport?.columns || 80
 
     // Cache promptu: w trakcie tury jest odświeżany; potem odliczamy TTL od końca ostatniej odpowiedzi.
-    const ttlMs = (await read($, ttlMinutes)) * 60_000
-    const last = await read($, lastRequestAt)
-    const leftMs = last > 0 ? last + ttlMs - (await $.clock.now()) : null
-    const cacheText = e.props.isWorking
+    const ttlMs = o.ttlMinutes * 60_000
+    const last = o.lastRequestAt
+    const leftMs = last > 0 ? last + ttlMs - o.now : null
+    const cacheText = o.isWorking
       ? ' · cache: odświeżany'
       : leftMs === null
         ? ' · cache: —'
         : leftMs > 0
           ? ` · cache ${formatLeft(leftMs)}`
           : ' · cache wygasł'
-    const cacheColor = e.props.isWorking || leftMs === null ? undefined : leftMs <= 0 ? 'red' : leftMs < 5 * 60_000 ? 'yellow' : 'green'
+    const cacheColor = o.isWorking || leftMs === null ? undefined : leftMs <= 0 ? 'red' : leftMs < 5 * 60_000 ? 'yellow' : 'green'
 
     const tail = ` ${snap.percentage}% ${formatTokens(snap.totalTokens)}/${formatTokens(snap.maxTokens)}`
-    // Przycisk otwiera panel Claude Code Mentor przez jego polecenie /mentor
-    // (panel należy do tamtego pluginu, więc nie otwieramy go stąd wprost).
     const mentorLabel = 'Mentor'
     // Zapas na odstępy i przycisk; pasek nigdy nie może się zawinąć do drugiej linii.
     const width = Math.max(10, Math.floor((columns - tail.length - cacheText.length - mentorLabel.length - 10) * 0.9))
@@ -268,10 +190,10 @@ export const register: Register = on => {
     })
 
     // Desktop i VS Code: SVG z dymkami po najechaniu. Terminal: pasek tekstowy.
-    const svgSurface = e.surface === 'desktop' || e.surface === 'vscode'
+    const svgSurface = !!o.Svg
     const bar = svgSurface ? (
       (() => {
-        const { Svg } = $.ui.resolve({ ...e, surface: 'desktop' as const })
+        const Svg = o.Svg!
         const widthPx = Math.max(80, Math.round(width * 8))
         return (
           <Box flexShrink={1} overflow="hidden">
@@ -288,9 +210,9 @@ export const register: Register = on => {
     ) : (
       <Box flexDirection="row" flexWrap="nowrap" flexShrink={1} overflow="hidden">
         {groups.map(group => (
-          <Text>
-            {group.parts.map(part => (
-              <Text color={part.color} dimColor={part.isDim}>
+          <Text key={`bar-g-${group.row}`}>
+            {group.parts.map((part, pi) => (
+              <Text key={`bar-p-${group.row}-${pi}`} color={part.color} dimColor={part.isDim}>
                 {part.text}
               </Text>
             ))}
@@ -318,13 +240,8 @@ export const register: Register = on => {
           key="open-mentor"
           label={mentorLabel}
           dimColor
-          onPress={() =>
-            $.command.run({ command: 'mentor' }).catch(err => {
-              $.ui.toast(`Mentor niedostępny: ${err instanceof Error ? err.message : String(err)}`)
-            })
-          }
+          onPress={o.onMentor}
         />
       </Box>
     )
-  })
 }

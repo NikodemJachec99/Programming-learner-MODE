@@ -13,6 +13,7 @@ import { COND_OPS, LANG_NAMES, boundaryTable, evalCond, parseLiteral, showLit } 
 import type { CondLang } from '../sim/conditions'
 import { explainStep, whyStep } from '../sim/explain'
 import { OP_GROUPS, applyEdits, boundaryNote, compareRuns } from '../sim/variants'
+import { autoCall, looksLikeCall } from '../sim/autocall'
 import { card, md, muted, section } from './kit'
 import type { Kit } from './kit'
 import { DEFAULT_SIM, S } from './state'
@@ -35,52 +36,49 @@ export const EXAMPLES: { id: string; label: string; source: string; dialect?: Di
 export async function loadSim(io: Host, source: string, origin: string, lang?: string): Promise<void> {
   const isSql = /^\s*(select|with|insert|update|delete)\b/i.test(source)
   const dialect: Dialect = lang === 'dart' || (lang === undefined && looksLikeDart(source)) ? 'dart' : 'js'
-  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, source, origin, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
+  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, pair: null, source, origin, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
   await io.set(S.tab, () => 'sim' as const)
 }
 
+/** Kod do wykonania: wariant, a do tego wywołanie (wpisane albo dobrane automatycznie). */
 function program(s: MentorSimState, variant: 'A' | 'B'): string {
-  const base = variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source
-  return s.callArgs.trim() ? `${base}\n${s.callArgs.trim()}` : base
+  const base = s.pair ? (variant === 'A' ? s.pair.a : s.pair.b) : variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source
+  const call = s.callArgs.trim()
+  if (call && looksLikeCall(call)) return `${base}\n${call}`
+  // jedno wywołanie dla obu wersji, żeby A i B dostały te same dane
+  const ac = autoCall(s.pair ? s.pair.b : base, s.dialect ?? 'js')
+  return ac ? `${base}\n${ac.call}` : base
 }
 
-function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B'): RenderElement {
-  const { Box, Button } = k.E
+function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B', paired: boolean): RenderElement {
+  const { Box, Button, Text } = k.E
   const set = (fn: (s: MentorSimState) => MentorSimState) => () => io.set(S.sim, fn)
   const clamp = (n: number) => Math.max(0, Math.min(total - 1, n))
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
-      <Button key="sim-reset" onPress={set(s => ({ ...s, cursor: 0 }))}>
-        RESET
+    <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1} alignItems="center">
+      <Button key="sim-reset" plain dimColor onPress={set(s => ({ ...s, cursor: 0 }))}>
+        ↺
       </Button>
       <Button key="sim-back" onPress={set(s => ({ ...s, cursor: clamp(s.cursor - 1) }))}>
-        ◀ BACK
+        ◀
       </Button>
       <Button key="sim-step" variant="primary" onPress={set(s => ({ ...s, cursor: clamp(s.cursor + 1) }))}>
-        STEP ▶
+        Krok ▶
       </Button>
       <Button key="sim-run" onPress={set(s => ({ ...s, cursor: total - 1 }))}>
-        RUN ⏭
-      </Button>
-      <Button key="sim-explain" onPress={set(s => ({ ...s, panel: s.panel === 'explain' ? 'state' : 'explain' }))}>
-        EXPLAIN
-      </Button>
-      <Button key="sim-why" onPress={set(s => ({ ...s, panel: s.panel === 'why' ? 'state' : 'why' }))}>
-        WHY
+        Do końca ⏭
       </Button>
       {hasB && (
         <Button key="sim-compare" onPress={set(s => ({ ...s, panel: s.panel === 'compare' ? 'state' : 'compare' }))}>
-          COMPARE
+          Porównaj A i B
         </Button>
       )}
-      {hasB && (
-        <Button key="sim-variant" onPress={set(s => ({ ...s, variant: s.variant === 'A' ? 'B' : 'A', cursor: 0 }))}>
-          {variant === 'A' ? 'Pokaż wariant B' : 'Pokaż oryginał A'}
+      {hasB && !paired && (
+        <Button key="sim-variant" plain dimColor onPress={set(s => ({ ...s, variant: s.variant === 'A' ? 'B' : 'A', cursor: 0 }))}>
+          {variant === 'A' ? 'pokaż B' : 'pokaż A'}
         </Button>
       )}
-      <Button key="sim-pos" plain dimColor onPress={() => undefined}>
-        {`krok ${cursor + 1}/${total}`}
-      </Button>
+      <Text dimColor>{`${cursor + 1}/${total}`}</Text>
     </Box>
   )
 }
@@ -119,26 +117,31 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
   const { Box, Text, Button, Input, Select } = k.E
   const dialect: Dialect = s.dialect ?? 'js'
   if (dialect === 'dart' && isFlutterUi(s.source)) return renderFlutter(k, s)
-  const variant = s.edits.length ? s.variant : 'A'
+  const pair = s.pair ?? null
+  const variant = pair || s.edits.length ? s.variant : 'A'
   const src = program(s, variant)
   const r = simulateCached(src, dialect)
-  const sites = simSites(s.source, dialect)
+  const sites = pair ? { ops: [], values: [] } : simSites(s.source, dialect)
+  const lineBase = pair ? (variant === 'A' ? pair.aStart : pair.bStart) - 1 : 0
   const cursor = Math.max(0, Math.min(s.cursor, Math.max(0, r.steps.length - 1)))
   const step = r.steps[cursor]
   const seen = new Set(r.steps.slice(0, cursor + 1).map(x => x.line))
   const width = Math.max(20, k.cols - 8)
-  const lines = r.lines
-  const onlyFunctions = dialect === 'js' && sites.error === undefined && /^\s*(export\s+)?(async\s+)?function\b/.test(s.source) && !/\n\S.*\(.*\)\s*;?\s*$/.test(s.source.split('\n').slice(-1).join('')) && !s.callArgs
+  const typed = s.callArgs.trim()
+  const auto = autoCall(pair ? pair.b : s.source, dialect)
+  const badCall = !!typed && !looksLikeCall(typed)
+  const codeLines = (pair ? (variant === 'A' ? pair.a : pair.b) : variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source).split('\n').length
 
   const codeView = (
     <Box flexDirection="column" borderStyle="round" borderColor={variant === 'B' ? 'warning' : 'subtle'} paddingX={1}>
-      <Text dimColor>{`${variant === 'B' ? 'Wariant B (zmieniony, tylko w pamięci)' : 'Wariant A (oryginał)'}${dialect === 'dart' ? ' · Dart' : ''}`}</Text>
-      {lines.map((text, i) => {
+      {(pair || s.edits.length > 0) && <Text dimColor>{pair ? (variant === 'A' ? `A: ${pair.aLabel}` : `B: ${pair.bLabel}`) : variant === 'B' ? 'B: zmieniony (tylko w pamięci)' : 'A: oryginał'}</Text>}
+      {r.lines.map((text, i) => {
         const n = i + 1
         const current = step?.line === n && step.kind !== 'end'
-        const label = `${current ? '▶' : ' '}${String(n).padStart(3)} │ ${text}`
+        const extra = n > codeLines
+        const label = `${current ? '▶' : ' '}${extra ? '    ' : String(n + lineBase).padStart(4)} │ ${text}`
         return (
-          <Text key={`ln-${n}`} wrap="truncate-end" bold={current} color={current ? 'claude' : undefined} dimColor={!current && !seen.has(n)}>
+          <Text key={`ln-${n}`} wrap="truncate-end" bold={current} color={current ? 'claude' : extra ? 'suggestion' : undefined} dimColor={!current && !extra && !seen.has(n)}>
             {label.length > width ? label.slice(0, width - 1) + '…' : label}
           </Text>
         )
@@ -146,122 +149,125 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
     </Box>
   )
 
-  const opSelects = sites.ops.slice(0, 6).map(site => {
-    const edit = s.edits.find(e => e.siteId === site.id)
-    const current = edit?.text ?? site.op
-    return (
-      <Select
-        key={`op-${site.id}`}
-        label={`L${site.line} ${site.expr.length > 22 ? site.expr.slice(0, 21) + '…' : site.expr}:`}
-        value={current}
-        options={dialectOps(OP_GROUPS[site.group], dialect).map(op => ({ value: op, label: op === site.op ? `${op} (oryginał)` : op }))}
-        onSelect={value =>
-          io.set(S.sim, x => {
-            const others = x.edits.filter(e => e.siteId !== site.id)
-            const edits = value === site.op ? others : [...others, { siteId: site.id, start: site.start, end: site.end, text: value, before: site.op, line: site.line }]
-            return { ...x, edits, variant: (edits.length ? 'B' : 'A') as 'A' | 'B', cursor: 0 }
-          })
-        }
-      />
-    )
-  })
-  const valueInputs = sites.values.slice(0, 5).map(site => {
-    const edit = s.edits.find(e => e.siteId === site.id)
-    return (
-      <Input
-        key={`val-${site.id}`}
-        label={`L${site.line} ${site.name} =`}
-        value={edit?.text ?? site.raw}
-        submitLabel="ustaw"
-        onSubmit={value =>
-          io.set(S.sim, x => {
-            const others = x.edits.filter(e => e.siteId !== site.id)
-            const v = value.trim()
-            const edits = !v || v === site.raw ? others : [...others, { siteId: site.id, start: site.start, end: site.end, text: v, before: site.raw, line: site.line }]
-            return { ...x, edits, variant: (edits.length ? 'B' : 'A') as 'A' | 'B', cursor: 0 }
-          })
-        }
-      />
-    )
-  })
-
   let panel: RenderElement | null = null
   if (r.error?.kind === 'syntax') {
-    panel = card(k, 'error', <Text color="error">{`Nie umiem wykonać tego kodu: ${r.error.message}${r.error.line ? ` (linia ${r.error.line})` : ''}`}</Text>, muted(k, dialect === 'dart' ? 'Symulator obsługuje podzbiór Darta: zmienne, null safety, if/switch, pętle, funkcje z parametrami nazwanymi, klasy, factory, gettery, enumy, wyjątki, List/Map/Set, Future, async/await. Bez Fluttera, Streamów i kaskad (..).' : 'Symulator obsługuje podzbiór JS/TS: zmienne, operatory, if/switch, pętle, funkcje, klasy, wyjątki, tablice, obiekty, Map/Set, Promise, async/await, setTimeout. Zaznacz mniejszy fragment albo dopisz wywołanie funkcji.'))
+    panel = card(k, 'error', <Text color="error" wrap="wrap">{`Nie umiem wykonać tego kodu: ${r.error.message}${r.error.line ? ` (linia ${r.error.line})` : ''}`}</Text>, muted(k, dialect === 'dart' ? 'Obsługiwany podzbiór Darta: zmienne, null safety, if/switch, pętle, funkcje, klasy, wyjątki, kolekcje, Future, async/await. Bez Fluttera, Streamów i kaskad (..).' : 'Obsługiwany podzbiór JS/TS: zmienne, operatory, if/switch, pętle, funkcje, klasy, wyjątki, tablice, obiekty, Map/Set, Promise, async/await, setTimeout.'))
   } else if (step) {
-    if (s.panel === 'explain') panel = card(k, 'suggestion', <Text bold>EXPLAIN · krok {cursor + 1}</Text>, ...explainStep(step, r).map(t => md(k, t)))
-    else if (s.panel === 'why') panel = card(k, 'permission', <Text bold>WHY · krok {cursor + 1}</Text>, md(k, whyStep(step, r)), step.cond ? md(k, `Warunek \`${step.cond.expr}\` → **${step.cond.result}**`) : null)
-    else if (s.panel === 'compare' && s.edits.length) {
+    if (s.panel === 'compare' && (pair || s.edits.length)) {
       const a = simulateCached(program(s, 'A'), dialect)
       const b = simulateCached(program(s, 'B'), dialect)
-      const cmp = compareRuns(a, b, s.edits.map(e => ({ before: e.before, after: e.text, line: e.line })))
-      panel = card(k, 'warning', <Text bold>COMPARE · A (oryginał) vs B (zmieniony)</Text>, ...cmp.lines.map(t => md(k, t)))
+      const cmp = compareRuns(a, b, pair ? [] : s.edits.map(e => ({ before: e.before, after: e.text, line: e.line })))
+      panel = card(k, 'warning', <Text bold>{pair ? `A (${pair.aLabel}) i B (${pair.bLabel}) na tych samych danych` : 'A (oryginał) i B (zmieniony)'}</Text>, ...cmp.lines.map(t => md(k, t)))
     } else {
-      const vars = Object.entries(step.vars).filter(([, v]) => !v.startsWith('[Function') && !v.startsWith('[class'))
+      const vars = Object.entries(step.vars).filter(([, v]) => !v.startsWith('[Function') && !v.startsWith('[class') && !v.startsWith('‹'))
+      const why = whyStep(step, r).replace(/^Dlaczego ten krok: /, '')
+      const more = s.panel === 'explain'
+      const out = r.output.slice(0, step.out)
       panel = card(
         k,
         step.hypothetical ? 'warning' : 'subtle',
-        <Text bold wrap="wrap">{`Krok ${cursor + 1}/${r.steps.length} · linia ${step.line}`}</Text>,
-        <Text wrap="wrap">{step.text}</Text>,
+        <Text bold wrap="wrap">{`Linia ${step.line + lineBase}: ${step.text}`}</Text>,
         step.cond && step.cond.detail.length > 0 && <Text color="suggestion" wrap="wrap">{`↳ ${step.cond.detail.join(' · ')}`}</Text>,
-        step.hypothetical && <Text color="warning">Ten krok opiera się na założeniu symulatora, nie na zweryfikowanym wykonaniu.</Text>,
-        <Text bold>Zmienne</Text>,
-        vars.length === 0 ? muted(k, '(brak)') : null,
-        ...vars.slice(0, 14).map(([name, v]) => (
+        <Text dimColor wrap="wrap">{`Dlaczego teraz: ${why}`}</Text>,
+        step.hypothetical && <Text color="warning" wrap="wrap">Ten krok opiera się na założeniu symulatora.</Text>,
+        vars.length > 0 && <Text bold>Zmienne</Text>,
+        ...vars.slice(0, 10).map(([name, v]) => (
           <Text key={`var-${name}`} wrap="truncate-end" color={step.changed.includes(name) ? 'warning' : undefined}>
             {`${step.changed.includes(name) ? '● ' : '  '}${name} = ${v}`}
           </Text>
         )),
-        <Text bold>Stos wywołań</Text>,
-        <Text dimColor wrap="wrap">{step.stack.length ? [...step.stack].reverse().join('  ←  ') : '(pusty: działa pętla zdarzeń)'}</Text>,
-        (step.queues.micro.length > 0 || step.queues.macro.length > 0) && <Text bold>Kolejki</Text>,
-        step.queues.micro.length > 0 && <Text color="permission" wrap="wrap">{`mikro: ${step.queues.micro.join(' → ')}`}</Text>,
-        step.queues.macro.length > 0 && <Text color="ide" wrap="wrap">{`makro: ${step.queues.macro.join(' → ')}`}</Text>,
-        <Text bold>Wyjście</Text>,
-        r.output.slice(0, step.out).length === 0 ? muted(k, '(nic jeszcze nie wypisano)') : null,
-        ...r.output.slice(0, step.out).slice(-8).map((o, i) => <Text key={`out-${i}`} wrap="wrap">{`> ${o}`}</Text>),
+        step.stack.length > 1 && <Text dimColor wrap="wrap">{`Stos: ${[...step.stack].reverse().join('  ←  ')}`}</Text>,
+        step.queues.micro.length > 0 && <Text color="permission" wrap="wrap">{`Mikrozadania: ${step.queues.micro.join(' → ')}`}</Text>,
+        step.queues.macro.length > 0 && <Text color="ide" wrap="wrap">{`Makrozadania: ${step.queues.macro.join(' → ')}`}</Text>,
+        out.length > 0 && <Text bold>Wyjście</Text>,
+        ...out.slice(-6).map((o, i) => <Text key={`out-${i}`} wrap="wrap">{`> ${o}`}</Text>),
+        more && <Box flexDirection="column" marginTop={1}>{explainStep(step, r).slice(1).map((t, i) => md(k, t, `ex-${i}`))}</Box>,
+        <Button key="sim-explain" plain dimColor onPress={() => io.set(S.sim, x => ({ ...x, panel: x.panel === 'explain' ? 'state' : 'explain' }))}>
+          {more ? 'mniej' : 'więcej o tym kroku'}
+        </Button>,
       )
     }
   }
 
-  const finished = step?.kind === 'end'
+  const whatIf = s.panel === 'whatif' && sites.ops.length + sites.values.length > 0
   return (
     <Box flexDirection="column">
-      <Text dimColor wrap="wrap">{`Źródło: ${s.origin}. Symulacja działa w pamięci i nie zmienia plików projektu.`}</Text>
-      {codeView}
-      {onlyFunctions && card(k, 'warning', <Text>Ten fragment tylko definiuje funkcję. Dopisz wywołanie, np. nazwa(1, 2):</Text>)}
-      <Input key="sim-call" label="Wywołanie (opcjonalne):" placeholder="np. fetchData(1) albo add(2, 3)" value={s.callArgs} submitLabel="uruchom" onSubmit={value => io.set(S.sim, x => ({ ...x, callArgs: value, cursor: 0 }))} />
-      {controls(io, k, Math.max(1, r.steps.length), cursor, s.edits.length > 0, variant)}
-      {panel}
-      {finished && r.skipped.length > 0 && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold>Pominięte fragmenty</Text>
-          {r.skipped.slice(0, 6).map((x, i) => (
-            <Text key={`sk-${i}`} dimColor wrap="wrap">{`linie ${x.from}-${x.to}: ${x.reason}`}</Text>
-          ))}
+      <Text dimColor wrap="truncate-end">{`${s.origin} · tylko w pamięci, pliki bez zmian`}</Text>
+      {pair && (
+        <Box flexDirection="row" columnGap={1}>
+          <Button key="pair-a" variant={variant === 'A' ? 'primary' : undefined} plain={variant === 'A' ? undefined : true} dimColor={variant !== 'A'} onPress={() => io.set(S.sim, x => ({ ...x, variant: 'A' as const, cursor: 0 }))}>
+            {`A: ${pair.aLabel}`}
+          </Button>
+          <Button key="pair-b" variant={variant === 'B' ? 'primary' : undefined} plain={variant === 'B' ? undefined : true} dimColor={variant !== 'B'} onPress={() => io.set(S.sim, x => ({ ...x, variant: 'B' as const, cursor: 0 }))}>
+            {`B: ${pair.bLabel}`}
+          </Button>
+          <Button key="pair-close" plain dimColor onPress={() => io.set(S.sim, x => ({ ...x, pair: null, source: pair.b, variant: 'A' as const, cursor: 0 }))}>
+            ✕
+          </Button>
         </Box>
       )}
-      {finished && r.loops.length > 0 && <Text dimColor>{`Pętle: ${r.loops.map(l => `linia ${l.line}: ${l.iterations} iteracji`).join(', ')}`}</Text>}
+      {codeView}
+      {!typed && auto && <Text dimColor wrap="wrap">{`Uruchamiam ${auto.label} z przykładowymi danymi. Wpisz własne wywołanie, żeby sprawdzić inne.`}</Text>}
+      {badCall && <Text color="warning" wrap="wrap">{`„${typed}” to nie jest wywołanie funkcji${auto ? `, więc uruchamiam ${auto.label}. Wpisz np. ${auto.label}` : '. Wpisz np. nazwa(1, 2)'}.`}</Text>}
+      <Input key="sim-call" label={pair ? 'Wywołanie (A i B):' : 'Wywołanie:'} placeholder={auto ? auto.label : pair?.hint ? pair.hint : 'np. add(2, 3)'} value={s.callArgs} submitLabel="uruchom" onSubmit={value => io.set(S.sim, x => ({ ...x, callArgs: value, cursor: 0 }))} />
+      {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair)}
+      {panel}
       {r.error && r.error.kind !== 'syntax' && <Text color="error" wrap="wrap">{r.error.message}</Text>}
-      {r.hypotheses.length > 0 && card(k, 'warning', <Text color="warning">Założenia symulatora (nie są zweryfikowanym wykonaniem)</Text>, ...r.hypotheses.map(x => muted(k, `• ${x}`)))}
-      {(sites.ops.length > 0 || sites.values.length > 0) &&
-        section(
-          k,
-          'What-if: zmień operator albo wartość (wariant B)',
-          ...opSelects,
-          ...valueInputs,
-          s.edits.length > 0 && (
-            <Box flexDirection="row" columnGap={1}>
-              <Button key="sim-clear" onPress={() => io.set(S.sim, x => ({ ...x, edits: [], variant: 'A' as const, cursor: 0, panel: 'state' as const }))}>
-                Wyczyść zmiany
-              </Button>
-              <Button key="sim-log" onPress={() => mentor.simExperiment(io, detectConcepts(dialect, s.source.split('\n').map((t, i) => ({ line: i + 1, text: t }))).map(x => x.id))}>
-                Zapisz eksperyment w historii nauki
-              </Button>
-            </Box>
-          ),
-          ...s.edits.map(e => boundaryNote(e.before, e.text)).filter((x): x is string => !!x).map(t => muted(k, t)),
-        )}
+      {r.hypotheses.length > 0 && card(k, 'warning', <Text color="warning">Założenia symulatora</Text>, ...r.hypotheses.map((x, i) => <Text key={`hy-${i}`} dimColor wrap="wrap">{`• ${x}`}</Text>))}
+      {sites.ops.length + sites.values.length > 0 && (
+        <Box marginTop={1}>
+          <Button key="sim-whatif" plain dimColor onPress={() => io.set(S.sim, x => ({ ...x, panel: x.panel === 'whatif' ? 'state' : 'whatif' }))}>
+            {whatIf ? '▾ Zmień operator albo wartość' : `▸ Zmień operator albo wartość${s.edits.length ? ` (${s.edits.length})` : ''}`}
+          </Button>
+        </Box>
+      )}
+      {whatIf && (
+        <Box flexDirection="column">
+          {sites.ops.slice(0, 6).map(site => {
+            const edit = s.edits.find(e => e.siteId === site.id)
+            return (
+              <Select
+                key={`op-${site.id}`}
+                label={`L${site.line} ${site.expr.length > 22 ? site.expr.slice(0, 21) + '…' : site.expr}:`}
+                value={edit?.text ?? site.op}
+                options={dialectOps(OP_GROUPS[site.group], dialect).map(op => ({ value: op, label: op === site.op ? `${op} (oryginał)` : op }))}
+                onSelect={value =>
+                  io.set(S.sim, x => {
+                    const others = x.edits.filter(e => e.siteId !== site.id)
+                    const edits = value === site.op ? others : [...others, { siteId: site.id, start: site.start, end: site.end, text: value, before: site.op, line: site.line }]
+                    return { ...x, edits, variant: (edits.length ? 'B' : 'A') as 'A' | 'B', cursor: 0 }
+                  })
+                }
+              />
+            )
+          })}
+          {sites.values.slice(0, 5).map(site => {
+            const edit = s.edits.find(e => e.siteId === site.id)
+            return (
+              <Input
+                key={`val-${site.id}`}
+                label={`L${site.line} ${site.name} =`}
+                value={edit?.text ?? site.raw}
+                submitLabel="ustaw"
+                onSubmit={value =>
+                  io.set(S.sim, x => {
+                    const others = x.edits.filter(e => e.siteId !== site.id)
+                    const v = value.trim()
+                    const edits = !v || v === site.raw ? others : [...others, { siteId: site.id, start: site.start, end: site.end, text: v, before: site.raw, line: site.line }]
+                    return { ...x, edits, variant: (edits.length ? 'B' : 'A') as 'A' | 'B', cursor: 0 }
+                  })
+                }
+              />
+            )
+          })}
+          {s.edits.length > 0 && (
+            <Button key="sim-clear" plain dimColor onPress={() => io.set(S.sim, x => ({ ...x, edits: [], variant: 'A' as const, cursor: 0, panel: 'state' as const }))}>
+              Wyczyść zmiany
+            </Button>
+          )}
+          {s.edits.map(e => boundaryNote(e.before, e.text)).filter((x): x is string => !!x).map((t, i) => <Text key={`bn-${i}`} dimColor wrap="wrap">{t}</Text>)}
+        </Box>
+      )}
     </Box>
   )
 }

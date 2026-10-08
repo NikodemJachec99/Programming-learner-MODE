@@ -25,7 +25,11 @@ export function factsFromPatch(hunks: readonly Hunk[], maxLines = 80): ChangeFac
   let snippetStart = 0
   let unified = ''
   for (const h of hunks) {
-    unified += `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@\n${h.lines.join('\n')}\n`
+    // nagłówek liczony z samych linii: niespójny nagłówek z narzędzia nie może wywrócić rysowania diffu
+    const body = h.lines.filter(l => l[0] === ' ' || l[0] === '-' || l[0] === '+')
+    const oldCount = body.filter(l => l[0] !== '+').length
+    const newCount = body.filter(l => l[0] !== '-').length
+    unified += `@@ -${h.oldStart},${oldCount} +${h.newStart},${newCount} @@\n${body.join('\n')}\n`
     let n = h.newStart
     if (!snippetStart) snippetStart = h.newStart
     for (const l of h.lines) {

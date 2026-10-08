@@ -43,8 +43,9 @@ export async function renderPractice(io: Host, k: Kit): Promise<RenderElement> {
   const q = quiz.question
   const c = conceptById(q.conceptId)
   const answered = quiz.status === 'graded'
-  const verdictColor = quiz.verdict === 'correct' ? 'success' : quiz.verdict === 'partial' ? 'warning' : 'error'
-  const verdictText = quiz.verdict === 'correct' ? 'Poprawnie' : quiz.verdict === 'partial' ? 'Częściowo poprawnie' : 'Niepoprawnie'
+  const verdictColor = quiz.revealed ? 'subtle' : quiz.verdict === 'correct' ? 'success' : quiz.verdict === 'partial' ? 'warning' : 'error'
+  const verdictText = quiz.revealed ? 'Odpowiedź' : quiz.verdict === 'correct' ? 'Poprawnie' : quiz.verdict === 'partial' ? 'Częściowo poprawnie' : 'Niepoprawnie'
+  const hints = quiz.hints ?? []
   const kindLabel = { predict: 'przewidź wynik', diagnose: 'znajdź błąd', explain: 'wyjaśnij mechanizm', apply: 'zastosuj', choice: 'wybór' }[q.kind]
 
   return (
@@ -69,6 +70,21 @@ export async function renderPractice(io: Host, k: Kit): Promise<RenderElement> {
       {!q.options && !answered && quiz.status !== 'grading' && (
         <Input key={`ans-${q.id}`} label="Twoja odpowiedź:" placeholder="Wyjaśnij własnymi słowami, Enter wysyła" submitLabel="wyślij" value={quiz.answer} onSubmit={v => mentor.answer(io, v)} />
       )}
+      {quiz.status === 'asking' && hints.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          {hints.map((h, i) => md(k, `**Podpowiedź ${i + 1}:** ${h}`, `hint-${i}`))}
+        </Box>
+      )}
+      {quiz.status === 'asking' && (
+        <Box flexDirection="row" columnGap={2} marginTop={1}>
+          <Button key="q-hint" plain dimColor onPress={() => mentor.quizHint(io)}>
+            {hints.length ? 'Kolejna podpowiedź' : 'Podpowiedź'}
+          </Button>
+          <Button key="q-reveal" plain dimColor onPress={() => mentor.quizReveal(io)}>
+            Pokaż odpowiedź
+          </Button>
+        </Box>
+      )}
       {quiz.status === 'pending' &&
         card(
           k,
@@ -90,6 +106,7 @@ export async function renderPractice(io: Host, k: Kit): Promise<RenderElement> {
           quiz.otherExample.length > 0 && section(k, 'To samo na innym przykładzie', md(k, quiz.otherExample)),
           quiz.followUp.length > 0 && section(k, 'Zadanie utrwalające (zrób samodzielnie)', md(k, quiz.followUp)),
           quiz.levelChange !== null && <Text color="success">{`Poziom: ${quiz.levelChange}`}</Text>,
+          quiz.revealed && muted(k, 'Odsłonięta odpowiedź nie zmienia Twojego poziomu. Spróbuj kolejnego pytania.'),
           <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
             <Button key="q-next" variant="primary" onPress={() => mentor.startQuiz(io, 'concept', q.conceptId)}>
               Kolejne pytanie

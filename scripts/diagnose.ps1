@@ -27,7 +27,7 @@ try {
 } catch { Line 'Baza' "BŁĄD: $_" $false }
 
 $list = (& claude plugin list 2>&1) -join "`n"
-foreach ($p in 'claude-code-mentor', 'context-bar') {
+foreach ($p in 'claude-code-mentor') {
   $ok = $list -match [regex]::Escape("$p@$Market")
   Line $p $(if ($ok) { 'zainstalowany' } else { 'nie zainstalowany' }) $ok
 }

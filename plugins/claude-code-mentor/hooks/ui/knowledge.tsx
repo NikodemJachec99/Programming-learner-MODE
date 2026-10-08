@@ -15,9 +15,11 @@ export async function renderKnowledge(io: Host, k: Kit): Promise<RenderElement> 
   const view = await io.get(S.view)
   const lessons = await io.get(S.lessons)
   const now = await io.now()
-  const counts = [0, 1, 2, 3, 4].map(l => knowledge.filter(r => r.level === l).length)
   const seen = knowledge.filter(r => r.level > 0 || r.exposures > 0)
-  const list = (view.knowledgeFilter < 0 ? seen : knowledge.filter(r => r.level === view.knowledgeFilter))
+  // poziom 0 liczony tylko wśród spotkanych: reszta katalogu to nie jest „Twoja wiedza”
+  const counts = [0, 1, 2, 3, 4].map(l => seen.filter(r => r.level === l).length)
+  const levels = [0, 1, 2, 3, 4].filter(l => counts[l]! > 0)
+  const list = (view.knowledgeFilter < 0 || !counts[view.knowledgeFilter] ? seen : seen.filter(r => r.level === view.knowledgeFilter))
     .slice()
     .sort((a, b) => b.level - a.level || b.mastery - a.mastery || b.exposures - a.exposures)
   const active = mis.filter(m => !m.resolved).sort((a, b) => b.count - a.count)
@@ -58,16 +60,16 @@ export async function renderKnowledge(io: Host, k: Kit): Promise<RenderElement> 
       <Text dimColor wrap="wrap">
         {`${graded} ocenionych odpowiedzi${graded ? `, ${Math.round((correct / graded) * 100)}% poprawnych` : ''} · ${knowledge.filter(r => r.due).length} powtórek do zrobienia · ${lessons.length} ostatnich lekcji`}
       </Text>
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
+      {levels.length > 1 && <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
         <Button key="kf-all" variant={view.knowledgeFilter < 0 ? 'primary' : undefined} plain={view.knowledgeFilter < 0 ? undefined : true} dimColor={view.knowledgeFilter >= 0} onPress={() => io.set(S.view, v => ({ ...v, knowledgeFilter: -1 }))}>
           {`Spotkane (${seen.length})`}
         </Button>
-        {[0, 1, 2, 3, 4].map(l => (
+        {levels.map(l => (
           <Button key={`kf-${l}`} variant={view.knowledgeFilter === l ? 'primary' : undefined} plain={view.knowledgeFilter === l ? undefined : true} dimColor={view.knowledgeFilter !== l} onPress={() => io.set(S.view, v => ({ ...v, knowledgeFilter: l }))}>
             {`${levelName(l)} (${counts[l]})`}
           </Button>
         ))}
-      </Box>
+      </Box>}
 
       {detail && dc &&
         card(
@@ -102,7 +104,7 @@ export async function renderKnowledge(io: Host, k: Kit): Promise<RenderElement> 
 
       {section(
         k,
-        view.knowledgeFilter < 0 ? 'Pojęcia, z którymi miałeś styczność' : levelName(view.knowledgeFilter),
+        view.knowledgeFilter < 0 || !counts[view.knowledgeFilter] ? 'Pojęcia, z którymi miałeś styczność' : levelName(view.knowledgeFilter),
         list.length === 0 ? muted(k, 'Pusto. Pojęcia pojawią się, gdy Claude zacznie ich używać albo gdy zrobisz ćwiczenia.') : null,
         ...list.slice(0, 40).map(r => (
           <Box key={`k-${r.id}`} flexDirection="row" columnGap={1}>

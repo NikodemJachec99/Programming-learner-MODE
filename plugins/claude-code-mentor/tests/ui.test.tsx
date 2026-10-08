@@ -18,18 +18,18 @@ test('B: panel rysuje się na desktopie i w terminalu, zakładki działają', as
   mock.clock(on, { now: 1_760_000_000_000 })
   for (const surface of ['desktop', 'terminal'] as const) {
     const ui = await $.ui.mount({ ...PANE(), surface })
-    expect(await ui.find({ key: 'tab-lesson' })).toBeDefined()
-    expect(await ui.find({ key: 'tab-now' })).toBeDefined()
-    for (const tab of ['lesson', 'sim', 'practice', 'now'] as const) {
+    expect(await ui.find({ key: 'tab-practice' })).toBeDefined()
+    expect(await ui.find({ key: 'tab-changes' })).toBeDefined()
+    for (const tab of ['sim', 'practice', 'changes'] as const) {
       await ui.press({ key: `tab-${tab}` })
     }
-    for (const tab of ['knowledge', 'path', 'settings'] as const) {
+    for (const tab of ['lesson', 'knowledge', 'path', 'settings'] as const) {
       await ui.select({ key: 'tab-more', value: tab })
     }
     expect(await ui.find({ key: 'tg-autoTeach' })).toBeDefined()
     await ui.press({ key: 'tab-sim' })
     expect(await ui.find({ key: 'sim-step' })).toBeDefined()
-    await ui.press({ key: 'tab-now' })
+    await ui.press({ key: 'tab-changes' })
     await ui.unmount()
   }
 })
@@ -38,27 +38,31 @@ test('B/P0: symulator w panelu: STEP, BACK, RESET, RUN i podmiana operatora (bez
   mock.clock(on, { now: 1_760_000_000_000 })
   const ui = await $.ui.mount({ ...PANE(), surface: 'desktop' })
   await ui.press({ key: 'tab-sim' })
-  expect(await ui.find({ type: 'Text', text: /Krok 1\// })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^1\/\d/ })).toBeDefined()
   await ui.press({ key: 'sim-step' })
   await ui.press({ key: 'sim-step' })
-  expect(await ui.find({ type: 'Text', text: /Krok 3\// })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^3\/\d/ })).toBeDefined()
   await ui.press({ key: 'sim-back' })
-  expect(await ui.find({ type: 'Text', text: /Krok 2\// })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^2\/\d/ })).toBeDefined()
   await ui.press({ key: 'sim-run' })
   expect(await ui.find({ type: 'Text', text: /> x jest mniejsze od 10/ })).toBeDefined()
   await ui.press({ key: 'sim-reset' })
-  expect(await ui.find({ type: 'Text', text: /Krok 1\// })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^1\/\d/ })).toBeDefined()
   // operator < → > : wariant B, inny wynik
   const site = findSites(DEFAULT_SIM.source).ops.find(o => o.op === '<')!
+  await ui.press({ key: 'sim-whatif' })
   expect(await ui.find({ key: `op-${site.id}` })).toBeDefined()
   await ui.select({ key: `op-${site.id}`, value: '>' })
-  expect(await ui.find({ type: 'Text', text: /Wariant B/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^B: zmieniony/ })).toBeDefined()
   await ui.press({ key: 'sim-run' })
   expect(await ui.find({ type: 'Text', text: /> x jest co najmniej 10/ })).toBeDefined()
   await ui.press({ key: 'sim-compare' })
   expect(await ui.find({ type: 'Markdown', text: /Linia 2/ })).toBeDefined()
+  await ui.press({ key: 'sim-compare' })
+  await ui.press({ key: 'sim-reset' })
+  await ui.press({ key: 'sim-step' })
   await ui.press({ key: 'sim-explain' })
-  await ui.press({ key: 'sim-why' })
+  expect(await ui.find({ type: 'Markdown', text: /Instrukcja warunkowa/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -99,4 +103,48 @@ test('pasek nad promptem: bez tematu oddaje pasek silnikowi (nic nie dokłada)',
       await ui.unmount()
     }
   }
+})
+
+test('pasek kontekstu jest częścią Mentora: kategorie, procent, licznik cache i przycisk Mentor', async ($, on) => {
+  mock.clock(on, { now: 1_760_000_000_000 })
+  on('session.usage', () => ({ value: {
+    context: { breakdown: { totalTokens: 120_000, maxTokens: 200_000, percentage: 60, categories: [
+      { name: 'System prompt', tokens: 20_000, color: 'inactive', kind: 'used' },
+      { name: 'Messages', tokens: 100_000, color: 'permission', kind: 'used' },
+      { name: 'Free space', tokens: 80_000, color: 'subtle', kind: 'free' },
+    ] } },
+  } }) as never)
+  on('ui.render', { component: 'AbovePrompt' }, ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>ENGINE</Text>
+  })
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const props = { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns: 90, scroll: { offset: 0, bodyRows: 3 }, view: {} }
+    let ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props })
+    await ui.unmount()
+    ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props })
+    expect(await ui.find({ key: 'open-mentor' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /60% 120k\/200k/ })).toBeDefined()
+    if (surface === 'desktop') expect(await ui.find({ type: 'Svg' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('ustawienia: 3 najważniejsze na wierzchu, reszta dopiero w „Zaawansowane”', async ($, on) => {
+  mock.clock(on, { now: 1_760_000_000_000 })
+  const ui = await $.ui.mount({ ...PANE(), surface: 'desktop' })
+  await ui.select({ key: 'tab-more', value: 'settings' })
+  expect(await ui.find({ key: 'tg-autoTeach' })).toBeDefined()
+  expect(await ui.find({ key: 'tg-contextBar' })).toBeDefined()
+  expect(await ui.find({ key: 's-cost' })).toBeDefined()
+  expect(await ui.find({ key: 'tg-paused' })).toBe(undefined)
+  expect(await ui.find({ key: 'd-wipe' })).toBe(undefined)
+  await ui.press({ key: 'set-adv' })
+  expect(await ui.find({ key: 'tg-paused' })).toBeDefined()
+  expect(await ui.find({ key: 'd-wipe' })).toBeDefined()
+  // Moja wiedza bez danych: żadnych pustych filtrów
+  await ui.select({ key: 'tab-more', value: 'knowledge' })
+  expect(await ui.find({ key: 'kf-0' })).toBe(undefined)
+  expect(await ui.find({ key: 'kf-4' })).toBe(undefined)
+  await ui.unmount()
 })

@@ -36,6 +36,8 @@ export type JsBuiltin = {
   kind: 'builtin'
   id: number
   name: string
+  /** Zaślepka nazwy spoza wycinka: każda właściwość i każde wywołanie daje kolejną zaślepkę. */
+  stub?: boolean
   call: (thisArg: Value, args: Value[]) => Generator<AwaitSignal, Value, ResumeMsg>
   props?: Map<string, Value>
 }
@@ -241,7 +243,7 @@ export function display(v: Value, depth = 0, seen: Set<number> = new Set()): str
     case 'function':
       return `[Function ${v.name || '(anonimowa)'}]`
     case 'builtin':
-      return `[Function ${v.name}]`
+      return v.stub ? `‹${v.name}›` : `[Function ${v.name}]`
     case 'class':
       return `[class ${v.name}]`
     case 'promise':
