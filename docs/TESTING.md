@@ -2,16 +2,16 @@
 
 ## Automatyczne
 
-```powershell
+```bash
 claude plugin validate .
-claude plugin test plugins\claude-code-mentor
+claude plugin test plugins/claude-code-mentor
 node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 ```
 
 | Zestaw | Wynik |
 |---|---|
-| Testy pluginu (symulator, silnik, prywatność, UI desktop i terminal, hooki) | 29 / 29 |
-| Helper bazy (migracje, model opanowania, współbieżność 8 procesów, eksport i import) | 15 / 15 |
+| Testy pluginu (symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 41 / 41 |
+| Helper bazy (migracje, model opanowania, współbieżność 8 procesów, eksport i import, katalog danych) | 16 / 16 |
 | Piaskownica SQL | 5 / 5 |
 | Walidacja marketplace i obu pluginów | ✔ |
 
@@ -39,6 +39,8 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 | P0-6. Quiz zapisuje konkretny błąd | PASS | `off-by-one` zapisany jako błędne przekonanie |
 | P0-9. Wyjaśnienia tylko w panelu | PASS | brak `prompt.submit`, `session.append`, `prompt.context` |
 | P0-10. Hipotezy oznaczone | PASS | `fetch`, `Math.random`, `Date.now` jako założenia |
+| Flutter i Dart | PASS | test: wynik symulatora Darta zgodny z Dartem (`~/`, `%`, null safety, Future), drzewo widgetów, pojęcia Fluttera w kodzie ekranu, komendy `flutter` |
+| macOS | częściowo | CI: helper i baza na macos-latest, składnia skryptów `.sh`. Instalacji w Claude Desktop na Macu nie sprawdzałem ręcznie |
 
 ## Ręczne
 
@@ -51,10 +53,10 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 
 ### I. Zmiana konta Claude
 
-1. `pwsh -File scripts\diagnose.ps1` i zanotuj liczby wierszy (`knowledge`, `lessons`, `exercises`).
+1. `pwsh -File scripts\diagnose.ps1` (macOS: `bash scripts/diagnose.sh`) i zanotuj liczby wierszy (`knowledge`, `lessons`, `exercises`).
 2. Wyloguj się z Claude Desktop i zaloguj na drugie konto.
 3. Otwórz nową sesję Code w dowolnym projekcie.
 4. Oczekiwane: panel działa, wiedza i ustawienia są te same, `diagnose.ps1` pokazuje te same liczby.
 5. Wróć na pierwsze konto i powtórz punkt 4.
 
-Baza leży w `%LOCALAPPDATA%\ClaudeCodeMentor`, a instalacja pluginu w `~/.claude/settings.json`. Żadne z nich nie jest przypisane do konta Anthropic.
+Baza leży w `%LOCALAPPDATA%\ClaudeCodeMentor` (macOS: `~/Library/Application Support/ClaudeCodeMentor`), a instalacja pluginu w `~/.claude/settings.json`. Żadne z nich nie jest przypisane do konta Anthropic.

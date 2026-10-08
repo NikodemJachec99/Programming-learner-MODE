@@ -20,8 +20,9 @@ export type Area =
   | 'security'
   | 'devops'
   | 'ai'
+  | 'mobile'
 
-export type Lang = 'js' | 'ts' | 'py' | 'php' | 'sql' | 'sh' | 'any'
+export type Lang = 'js' | 'ts' | 'py' | 'php' | 'sql' | 'sh' | 'dart' | 'any'
 
 export type ConceptMisconception = {
   /** Stały klucz, np. 'assign-vs-compare'. Unikalny w obrębie pojęcia. */

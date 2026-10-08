@@ -7,8 +7,12 @@ on:
 
 jobs:
   helper-tests:
-    name: Helper SQLite i piaskownica SQL
-    runs-on: windows-latest
+    name: Helper SQLite i piaskownica SQL (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,8 +21,26 @@ jobs:
       - name: Testy helpera
         run: node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
       - name: Poprawność manifestów
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Get-ChildItem -Recurse -Filter *.json -Path .claude-plugin, plugins |
             Where-Object { $_.FullName -notmatch '\\types\\' } |
             ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null; "ok  $($_.FullName)" }
+
+  shell-scripts:
+    name: Skrypty macOS i Linux
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Składnia bash
+        run: for f in scripts/*.sh; do bash -n "$f" && echo "ok  $f"; done
+      - name: Baza w katalogu danych macOS
+        run: |
+          export CLAUDE_CODE_MENTOR_DATA="$RUNNER_TEMP/mentor-data"
+          REQ=$(node -e 'process.stdout.write(JSON.stringify({ v: 1, dataDir: process.argv[1], ops: [{ op: "init" }, { op: "diag" }] }))' "$CLAUDE_CODE_MENTOR_DATA")
+          echo "$REQ" | node --no-warnings plugins/claude-code-mentor/helper/mentor-db.mjs | tee result.json
+          node -e 'const r = JSON.parse(require("fs").readFileSync("result.json", "utf8")); if (!r.ok || r.results[1].value.integrity !== "ok") process.exit(1)'

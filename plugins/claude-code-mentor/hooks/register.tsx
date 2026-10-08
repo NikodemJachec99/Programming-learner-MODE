@@ -42,7 +42,18 @@ function makeHost($: EngineInterface): Host {
     version: async () => (await $.session.version()).version,
     isGitRepo: async () => (await $.session.repo()) !== null,
     surfaces: () => $.session.surfaces(),
-    localAppData: () => $.env.get('LOCALAPPDATA'),
+    dataDir: async () => {
+      const own = await $.env.get('CLAUDE_CODE_MENTOR_DATA')
+      if (own) return own
+      const local = await $.env.get('LOCALAPPDATA')
+      if (local) return `${local.replace(/[\\/]+$/, '')}\\ClaudeCodeMentor`
+      const home = await $.env.get('HOME')
+      if (!home) return undefined
+      const mac = `${home}/Library/Application Support`
+      if (await $.fs.exists(mac).catch(() => false)) return `${mac}/ClaudeCodeMentor`
+      const xdg = await $.env.get('XDG_DATA_HOME')
+      return `${xdg || `${home}/.local/share`}/ClaudeCodeMentor`
+    },
     pluginRoot: $.plugin.root,
     fsRead: path => $.fs.read(path),
     fsExists: path => $.fs.exists(path),
@@ -185,7 +196,7 @@ export const register: Register = on => {
             origin = 'zaznaczony tekst'
           }
         }
-        if (source.trim()) await loadSim(io, source, origin)
+        if (source.trim()) await loadSim(io, source, origin, ref && /\.dart$/i.test(ref[1]!) ? 'dart' : undefined)
         else await tab('sim')
         break
       }

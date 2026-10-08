@@ -6,29 +6,36 @@ import type { RenderElement } from 'claude-code'
 import type { MentorSimState } from '../../types'
 import { mentor } from '../mentor'
 import { detectConcepts } from '../engine/detect'
-import { BOUNDARY_NOTE, simulateCached } from './simcache'
+import { BOUNDARY_NOTE, dialectOps, simSites, simulateCached } from './simcache'
+import type { Dialect } from './simcache'
+import { isFlutterUi, looksLikeDart, widgetTree } from '../sim/dart'
 import { COND_OPS, LANG_NAMES, boundaryTable, evalCond, parseLiteral, showLit } from '../sim/conditions'
 import type { CondLang } from '../sim/conditions'
 import { explainStep, whyStep } from '../sim/explain'
-import { OP_GROUPS, applyEdits, boundaryNote, compareRuns, findSites } from '../sim/variants'
+import { OP_GROUPS, applyEdits, boundaryNote, compareRuns } from '../sim/variants'
 import { card, md, muted, section } from './kit'
 import type { Kit } from './kit'
 import { DEFAULT_SIM, S } from './state'
 import type { SqlRun } from '../store/db'
 
-export const EXAMPLES: { id: string; label: string; source: string }[] = [
+export const EXAMPLES: { id: string; label: string; source: string; dialect?: Dialect }[] = [
   { id: 'if', label: 'Warunek if (x < 10)', source: DEFAULT_SIM.source },
   { id: 'loop', label: 'Pętla for: suma', source: 'let sum = 0\nfor (let i = 0; i < 5; i++) {\n  sum += i\n}\nconsole.log(sum)' },
   { id: 'fn', label: 'Funkcja: argumenty i return', source: 'function area(width, height) {\n  const result = width * height\n  return result\n}\nconst a = area(3, 4)\nconsole.log("pole:", a)' },
   { id: 'eq', label: '== vs ===', source: 'const input = "0"\nif (input == 0) {\n  console.log("== mówi: równe")\n}\nif (input === 0) {\n  console.log("=== mówi: równe")\n} else {\n  console.log("=== mówi: różne typy")\n}' },
   { id: 'async', label: 'async/await i event loop', source: 'console.log("1: start")\nsetTimeout(() => console.log("5: setTimeout"), 0)\nasync function load() {\n  console.log("2: load start")\n  await null\n  console.log("4: po await")\n}\nload()\nconsole.log("3: koniec kodu synchronicznego")' },
   { id: 'err', label: 'Wyjątek i propagacja', source: 'function parseAge(text) {\n  const n = Number(text)\n  if (Number.isNaN(n)) {\n    throw new Error("To nie liczba: " + text)\n  }\n  return n\n}\ntry {\n  console.log(parseAge("12"))\n  console.log(parseAge("abc"))\n} catch (e) {\n  console.log("Błąd:", e.message)\n}' },
+  { id: 'dart-basics', label: 'Dart: zmienne, ~/ i null safety', dialect: 'dart', source: "void main() {\n  int total = 17;\n  final people = 5;\n  print('każdy dostaje ${total ~/ people}');\n  print('reszta ${total % people}');\n  String? coupon;\n  print(coupon ?? 'brak kuponu');\n  coupon = 'RABAT10';\n  print(coupon.length);\n}" },
+  { id: 'dart-class', label: 'Dart: klasa, fromJson i getter', dialect: 'dart', source: "class Product {\n  final String name;\n  final double price;\n  Product({required this.name, required this.price});\n\n  factory Product.fromJson(Map<String, dynamic> json) {\n    return Product(name: json['name'], price: json['price']);\n  }\n\n  bool get isCheap => price < 10;\n}\n\nvoid main() {\n  final items = [\n    Product.fromJson({'name': 'Kawa', 'price': 12.5}),\n    Product(name: 'Bułka', price: 1.2),\n  ];\n  for (final p in items) {\n    if (p.isCheap) {\n      print('${p.name}: tanio');\n    } else {\n      print('${p.name}: drogo');\n    }\n  }\n}" },
+  { id: 'dart-future', label: 'Dart: Future, await i kolejki', dialect: 'dart', source: "Future<String> fetchUser() async {\n  print('2: pobieram');\n  await Future.delayed(Duration(milliseconds: 300));\n  return 'Ola';\n}\n\nvoid main() async {\n  print('1: start');\n  Future(() => print('4: kolejka zdarzeń'));\n  scheduleMicrotask(() => print('3: mikrozadanie'));\n  final user = await fetchUser();\n  print('5: mam $user');\n}" },
+  { id: 'dart-flutter', label: 'Flutter: drzewo widgetów', dialect: 'dart', source: "class CounterPage extends StatefulWidget {\n  const CounterPage({super.key});\n  @override\n  State<CounterPage> createState() => _CounterPageState();\n}\n\nclass _CounterPageState extends State<CounterPage> {\n  int _count = 0;\n\n  @override\n  Widget build(BuildContext context) {\n    return Scaffold(\n      appBar: AppBar(title: const Text('Licznik')),\n      body: Center(\n        child: Column(\n          mainAxisAlignment: MainAxisAlignment.center,\n          children: [\n            Text('Kliknięcia: $_count'),\n            ElevatedButton(\n              onPressed: () => setState(() => _count++),\n              child: const Text('+1'),\n            ),\n          ],\n        ),\n      ),\n    );\n  }\n}" },
   { id: 'closure', label: 'Domknięcie (closure)', source: 'function makeCounter() {\n  let count = 0\n  return () => {\n    count++\n    return count\n  }\n}\nconst next = makeCounter()\nnext()\nconsole.log(next())' },
 ]
 
-export async function loadSim(io: Host, source: string, origin: string): Promise<void> {
+export async function loadSim(io: Host, source: string, origin: string, lang?: string): Promise<void> {
   const isSql = /^\s*(select|with|insert|update|delete)\b/i.test(source)
-  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, source, origin, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
+  const dialect: Dialect = lang === 'dart' || (lang === undefined && looksLikeDart(source)) ? 'dart' : 'js'
+  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, source, origin, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
   await io.set(S.tab, () => 'sim' as const)
 }
 
@@ -78,22 +85,54 @@ function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean
   )
 }
 
+function renderFlutter(k: Kit, s: MentorSimState): RenderElement {
+  const { Box, Text } = k.E
+  const tree = widgetTree(s.source)
+  const width = Math.max(20, k.cols - 8)
+  return (
+    <Box flexDirection="column">
+      <Text dimColor wrap="wrap">{`Źródło: ${s.origin}. Kod interfejsu Fluttera potrzebuje silnika Fluttera, więc symulator go nie wykonuje. Pokazuje drzewo widgetów, które zbuduje build().`}</Text>
+      {card(
+        k,
+        'autoAccept',
+        <Text bold>Drzewo widgetów</Text>,
+        tree.length === 0 ? muted(k, 'Nie znalazłem wywołań widgetów (np. return Scaffold(...)).') : null,
+        ...tree.map((n, i) => {
+          const label = `${'  '.repeat(n.depth)}${n.depth ? '└ ' : ''}${n.slot ? `${n.slot}: ` : ''}${n.name}`
+          return (
+            <Text key={`wt-${i}`} wrap="truncate-end">
+              <Text color={n.depth === 0 ? 'claude' : undefined} bold={n.depth === 0}>
+                {label.length > width - 8 ? label.slice(0, width - 9) + '…' : label}
+              </Text>
+              <Text dimColor>{`  L${n.line}`}</Text>
+            </Text>
+          )
+        }),
+      )}
+      {muted(k, 'Każde wcięcie to rodzic i dziecko. child: ma jedno dziecko, children: listę. Constraints idą w dół drzewa, rozmiary w górę, a rodzic ustawia pozycję dziecka.')}
+      {muted(k, 'Logikę w Darcie (funkcje, klasy modeli, Future) wklej osobno, wtedy symulator wykona ją krok po kroku.')}
+    </Box>
+  )
+}
+
 async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElement> {
   const { Box, Text, Button, Input, Select } = k.E
+  const dialect: Dialect = s.dialect ?? 'js'
+  if (dialect === 'dart' && isFlutterUi(s.source)) return renderFlutter(k, s)
   const variant = s.edits.length ? s.variant : 'A'
   const src = program(s, variant)
-  const r = simulateCached(src)
-  const sites = findSites(s.source)
+  const r = simulateCached(src, dialect)
+  const sites = simSites(s.source, dialect)
   const cursor = Math.max(0, Math.min(s.cursor, Math.max(0, r.steps.length - 1)))
   const step = r.steps[cursor]
   const seen = new Set(r.steps.slice(0, cursor + 1).map(x => x.line))
   const width = Math.max(20, k.cols - 8)
   const lines = r.lines
-  const onlyFunctions = sites.error === undefined && /^\s*(export\s+)?(async\s+)?function\b/.test(s.source) && !/\n\S.*\(.*\)\s*;?\s*$/.test(s.source.split('\n').slice(-1).join('')) && !s.callArgs
+  const onlyFunctions = dialect === 'js' && sites.error === undefined && /^\s*(export\s+)?(async\s+)?function\b/.test(s.source) && !/\n\S.*\(.*\)\s*;?\s*$/.test(s.source.split('\n').slice(-1).join('')) && !s.callArgs
 
   const codeView = (
     <Box flexDirection="column" borderStyle="round" borderColor={variant === 'B' ? 'warning' : 'subtle'} paddingX={1}>
-      <Text dimColor>{variant === 'B' ? 'Wariant B (zmieniony, tylko w pamięci)' : 'Wariant A (oryginał)'}</Text>
+      <Text dimColor>{`${variant === 'B' ? 'Wariant B (zmieniony, tylko w pamięci)' : 'Wariant A (oryginał)'}${dialect === 'dart' ? ' · Dart' : ''}`}</Text>
       {lines.map((text, i) => {
         const n = i + 1
         const current = step?.line === n && step.kind !== 'end'
@@ -115,7 +154,7 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
         key={`op-${site.id}`}
         label={`L${site.line} ${site.expr.length > 22 ? site.expr.slice(0, 21) + '…' : site.expr}:`}
         value={current}
-        options={OP_GROUPS[site.group].map(op => ({ value: op, label: op === site.op ? `${op} (oryginał)` : op }))}
+        options={dialectOps(OP_GROUPS[site.group], dialect).map(op => ({ value: op, label: op === site.op ? `${op} (oryginał)` : op }))}
         onSelect={value =>
           io.set(S.sim, x => {
             const others = x.edits.filter(e => e.siteId !== site.id)
@@ -148,13 +187,13 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
 
   let panel: RenderElement | null = null
   if (r.error?.kind === 'syntax') {
-    panel = card(k, 'error', <Text color="error">{`Nie umiem wykonać tego kodu: ${r.error.message}${r.error.line ? ` (linia ${r.error.line})` : ''}`}</Text>, muted(k, 'Symulator obsługuje podzbiór JS/TS: zmienne, operatory, if/switch, pętle, funkcje, klasy, wyjątki, tablice, obiekty, Map/Set, Promise, async/await, setTimeout. Zaznacz mniejszy fragment albo dopisz wywołanie funkcji.'))
+    panel = card(k, 'error', <Text color="error">{`Nie umiem wykonać tego kodu: ${r.error.message}${r.error.line ? ` (linia ${r.error.line})` : ''}`}</Text>, muted(k, dialect === 'dart' ? 'Symulator obsługuje podzbiór Darta: zmienne, null safety, if/switch, pętle, funkcje z parametrami nazwanymi, klasy, factory, gettery, enumy, wyjątki, List/Map/Set, Future, async/await. Bez Fluttera, Streamów i kaskad (..).' : 'Symulator obsługuje podzbiór JS/TS: zmienne, operatory, if/switch, pętle, funkcje, klasy, wyjątki, tablice, obiekty, Map/Set, Promise, async/await, setTimeout. Zaznacz mniejszy fragment albo dopisz wywołanie funkcji.'))
   } else if (step) {
     if (s.panel === 'explain') panel = card(k, 'suggestion', <Text bold>EXPLAIN · krok {cursor + 1}</Text>, ...explainStep(step, r).map(t => md(k, t)))
     else if (s.panel === 'why') panel = card(k, 'permission', <Text bold>WHY · krok {cursor + 1}</Text>, md(k, whyStep(step, r)), step.cond ? md(k, `Warunek \`${step.cond.expr}\` → **${step.cond.result}**`) : null)
     else if (s.panel === 'compare' && s.edits.length) {
-      const a = simulateCached(program(s, 'A'))
-      const b = simulateCached(program(s, 'B'))
+      const a = simulateCached(program(s, 'A'), dialect)
+      const b = simulateCached(program(s, 'B'), dialect)
       const cmp = compareRuns(a, b, s.edits.map(e => ({ before: e.before, after: e.text, line: e.line })))
       panel = card(k, 'warning', <Text bold>COMPARE · A (oryginał) vs B (zmieniony)</Text>, ...cmp.lines.map(t => md(k, t)))
     } else {
@@ -216,7 +255,7 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
               <Button key="sim-clear" onPress={() => io.set(S.sim, x => ({ ...x, edits: [], variant: 'A' as const, cursor: 0, panel: 'state' as const }))}>
                 Wyczyść zmiany
               </Button>
-              <Button key="sim-log" onPress={() => mentor.simExperiment(io, detectConcepts('js', s.source.split('\n').map((t, i) => ({ line: i + 1, text: t }))).map(x => x.id))}>
+              <Button key="sim-log" onPress={() => mentor.simExperiment(io, detectConcepts(dialect, s.source.split('\n').map((t, i) => ({ line: i + 1, text: t }))).map(x => x.id))}>
                 Zapisz eksperyment w historii nauki
               </Button>
             </Box>
@@ -240,7 +279,7 @@ function renderCond(io: Host, k: Kit, s: MentorSimState): RenderElement {
   return (
     <Box flexDirection="column">
       <Text dimColor wrap="wrap">Eksplorator warunków: jeden operator, dwie wartości, semantyka wybranego języka. Wpisz liczbę (7), napis w cudzysłowie ("7"), true/false/null (Python: True/False/None).</Text>
-      <Select key="cond-lang" label="Język:" value={lang} options={(['js', 'py', 'php'] as const).map(l => ({ value: l, label: LANG_NAMES[l] }))} onSelect={v => io.set(S.sim, x => ({ ...x, condLang: v as CondLang }))} />
+      <Select key="cond-lang" label="Język:" value={lang} options={(['js', 'py', 'php', 'dart'] as const).map(l => ({ value: l, label: LANG_NAMES[l] }))} onSelect={v => io.set(S.sim, x => ({ ...x, condLang: v as CondLang }))} />
       <Input key="cond-left" label="Lewa strona (x):" value={s.condLeft} submitLabel="ustaw" onSubmit={v => io.set(S.sim, x => ({ ...x, condLeft: v }))} />
       <Select key="cond-op" label="Operator:" value={op} options={ops.map(o => ({ value: o, label: o }))} onSelect={v => io.set(S.sim, x => ({ ...x, condOp: v }))} />
       <Input key="cond-right" label="Prawa strona:" value={s.condRight} submitLabel="ustaw" onSubmit={v => io.set(S.sim, x => ({ ...x, condRight: v }))} />
@@ -322,7 +361,7 @@ export async function renderSim(io: Host, k: Kit): Promise<RenderElement> {
     <Box flexDirection="column">
       <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
         <Button key="m-js" variant={s.mode === 'js' ? 'primary' : undefined} onPress={mode('js')}>
-          Kod JS/TS
+          Kod JS/TS/Dart
         </Button>
         <Button key="m-cond" variant={s.mode === 'cond' ? 'primary' : undefined} onPress={mode('cond')}>
           Warunek
@@ -339,7 +378,7 @@ export async function renderSim(io: Host, k: Kit): Promise<RenderElement> {
           options={[{ value: '', label: '(wybierz albo użyj /mentor sim)' }, ...EXAMPLES.map(e => ({ value: e.id, label: e.label }))]}
           onSelect={v => {
             const ex = EXAMPLES.find(e => e.id === v)
-            if (ex) return loadSim(io, ex.source, `przykład: ${ex.label}`)
+            if (ex) return loadSim(io, ex.source, `przykład: ${ex.label}`, ex.dialect ?? 'js')
           }}
         />
       )}

@@ -1,16 +1,19 @@
 {
   "name": "programming-learner-mode",
-  "owner": { "name": "Nikodem Jachec", "url": "https://github.com/NikodemJachec99" },
+  "owner": {
+    "name": "Nikodem Jachec",
+    "url": "https://github.com/NikodemJachec99"
+  },
   "metadata": {
     "description": "Programming Learner MODE: mody do Claude Code, które uczą programowania na Twoim własnym kodzie.",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "plugins": [
     {
       "name": "claude-code-mentor",
       "source": "./plugins/claude-code-mentor",
-      "description": "Nauczyciel programowania: lekcje z prawdziwych zmian, symulator wykonania, ćwiczenia, model wiedzy w SQLite.",
-      "version": "1.1.0",
+      "description": "Nauczyciel programowania: lekcje z prawdziwych zmian (także Dart i Flutter), symulator wykonania, ćwiczenia, model wiedzy w SQLite.",
+      "version": "1.2.0",
       "category": "education"
     },
     {
