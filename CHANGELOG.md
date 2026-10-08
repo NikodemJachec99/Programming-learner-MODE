@@ -9,6 +9,8 @@
 - Jawne przypadki (do 6) puszczone przez wszystkie wersje. Wiersz z różnymi wynikami jest oznaczony, brak funkcji w wersji nie udaje wyniku, wynik oparty na założeniu ma znak ≈.
 - „Sprawdź w projekcie” wstawia prośbę do Claude o uruchomienie prawdziwych testów z tymi przypadkami i porównanie z przewidywaniem. Mentor sam niczego z projektu nie uruchamia.
 - Alternatywa: „Dodaj do laboratorium” zamiast osobnego porównania w Symulatorze.
+- Symulator rozumie wyrażenia regularne (`/…/g`, `new RegExp`, `replace` z funkcją, `split`, `match`, `test`, `search`) i ma `trimStart`, `trimEnd`, `lastIndexOf` i kilka innych metod napisów. Wcześniej kod z regexem kończył się błędem „Nieznany znak”.
+- „Warto zrozumieć” nie pokazuje podstaw, gdy w zmianie nie ma nic poza nimi.
 
 ### Poprawki
 

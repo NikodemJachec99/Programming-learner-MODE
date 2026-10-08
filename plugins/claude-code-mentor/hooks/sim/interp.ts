@@ -409,6 +409,22 @@ class Interpreter {
   private newObject(className?: string): JsObject {
     return { kind: 'object', id: this.nextId++, props: new Map(), proto: null, className }
   }
+  /** Wyrażenie regularne: natywny RegExp w środku, test/exec jako metody. */
+  private newRegex(re: RegExp): JsObject {
+    const o = this.newObject('RegExp')
+    o.regex = re
+    o.props.set('source', re.source)
+    o.props.set('flags', re.flags)
+    o.props.set('global', re.global)
+    o.props.set('test', this.fnBuiltin('test', (_t, a) => ((re.lastIndex = re.global || re.sticky ? re.lastIndex : 0), re.test(toStr(a[0])))))
+    o.props.set('exec', this.fnBuiltin('exec', (_t, a) => this.matchValue(re.exec(toStr(a[0])))))
+    return o
+  }
+  private matchValue(m: RegExpMatchArray | RegExpExecArray | null): Value {
+    if (!m) return null
+    const arr = this.newArray([...m].map(x => (x === undefined ? undefined : x)))
+    return arr
+  }
   private newArray(items: Value[]): JsArray {
     return { kind: 'array', id: this.nextId++, items }
   }
@@ -1106,6 +1122,8 @@ class Interpreter {
         return e.value
       case 'Str':
         return e.value
+      case 'Regex':
+        return this.newRegex(new RegExp(e.pattern, e.flags))
       case 'Bool':
         return e.value
       case 'Null':
@@ -1554,13 +1572,69 @@ class Interpreter {
     if (k === 'length') return s.length
     if (/^\d+$/.test(k)) return s[Number(k)]
     const S = (name: string, f: (args: Value[]) => Value) => this.fnBuiltin(name, (_t, a) => f(a))
+    const self = this
+    const reOf = (v: Value): RegExp | null => (isRef(v) && v.kind === 'object' && v.regex ? v.regex : null)
+    // replace / replaceAll z funkcją: wołana dla każdego dopasowania, jak w JS
+    const replaceWith = (name: string, all: boolean) =>
+      this.builtin(name, function* (_t, a) {
+        const re = reOf(a[0])
+        const pattern: RegExp = re ? new RegExp(re.source, re.flags) : new RegExp(toStr(a[0]).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'g' : '')
+        if (all && re && !re.global) return self.throwError('TypeError', 'replaceAll z wyrażeniem regularnym wymaga flagi g', self.lastLine)
+        const fn = a[1]
+        if (!(isRef(fn) && (fn.kind === 'function' || fn.kind === 'builtin'))) return s.replace(pattern, toStr(fn))
+        let out = ''
+        let last = 0
+        const matches = pattern.global ? [...s.matchAll(pattern)] : [pattern.exec(s)].filter((m): m is RegExpExecArray => !!m)
+        for (const m of matches) {
+          const idx = m.index ?? 0
+          const r = yield* self.callFunction(fn, undefined, [...[...m].map(x => (x === undefined ? undefined : x)), idx, s], self.lastLine, 'callback')
+          out += s.slice(last, idx) + toStr(r)
+          last = idx + m[0].length
+        }
+        return out + s.slice(last)
+      })
     switch (k) {
+      case 'match':
+        return S(k, a => {
+          const re = reOf(a[0]) ?? new RegExp(toStr(a[0]))
+          return this.matchValue(s.match(new RegExp(re.source, re.flags)))
+        })
+      case 'matchAll':
+        return S(k, a => {
+          const re = reOf(a[0]) ?? new RegExp(toStr(a[0]), 'g')
+          if (!re.global) return this.throwError('TypeError', 'matchAll wymaga flagi g', this.lastLine) as unknown as Value
+          return this.newArray([...s.matchAll(new RegExp(re.source, re.flags))].map(m => this.matchValue(m)))
+        })
+      case 'search':
+        return S(k, a => s.search(reOf(a[0]) ?? toStr(a[0])))
       case 'toUpperCase':
         return S(k, () => s.toUpperCase())
       case 'toLowerCase':
         return S(k, () => s.toLowerCase())
       case 'trim':
         return S(k, () => s.trim())
+      case 'trimStart':
+      case 'trimLeft':
+        return S(k, () => s.trimStart())
+      case 'trimEnd':
+      case 'trimRight':
+        return S(k, () => s.trimEnd())
+      case 'lastIndexOf':
+        return S(k, a => s.lastIndexOf(toStr(a[0])))
+      case 'charCodeAt':
+        return S(k, a => s.charCodeAt(toNumber(a[0] ?? 0)))
+      case 'codePointAt':
+        return S(k, a => s.codePointAt(toNumber(a[0] ?? 0)))
+      case 'localeCompare':
+        return S(k, a => s.localeCompare(toStr(a[0])))
+      case 'normalize':
+        return S(k, a => s.normalize(a[0] === undefined ? undefined : toStr(a[0])))
+      case 'toLocaleUpperCase':
+        return S(k, () => s.toLocaleUpperCase())
+      case 'toLocaleLowerCase':
+        return S(k, () => s.toLocaleLowerCase())
+      case 'valueOf':
+        return S(k, () => s)
       case 'includes':
         return S(k, a => s.includes(toStr(a[0])))
       case 'startsWith':
@@ -1574,11 +1648,11 @@ class Interpreter {
       case 'substring':
         return S(k, a => s.substring(toNumber(a[0]), a[1] === undefined ? undefined : toNumber(a[1])))
       case 'split':
-        return S(k, a => this.newArray(s.split(a[0] === undefined ? (undefined as unknown as string) : toStr(a[0]))))
+        return S(k, a => this.newArray(s.split(a[0] === undefined ? (undefined as unknown as string) : (reOf(a[0]) ?? toStr(a[0])))))
       case 'replace':
-        return S(k, a => s.replace(toStr(a[0]), toStr(a[1])))
+        return replaceWith(k, false)
       case 'replaceAll':
-        return S(k, a => s.split(toStr(a[0])).join(toStr(a[1])))
+        return replaceWith(k, true)
       case 'padStart':
         return S(k, a => s.padStart(toNumber(a[0]), a[1] === undefined ? ' ' : toStr(a[1])))
       case 'padEnd':
@@ -1918,6 +1992,16 @@ class Interpreter {
     g('Error', errorCtor('Error'))
     g('TypeError', errorCtor('TypeError'))
     g('RangeError', errorCtor('RangeError'))
+    const regexCtor = (_t: Value, a: Value[]) => {
+      try {
+        return self.newRegex(isRef(a[0]) && a[0].kind === 'object' && a[0].regex ? new RegExp(a[0].regex.source, a[1] === undefined ? a[0].regex.flags : toStr(a[1])) : new RegExp(a[0] === undefined ? '(?:)' : toStr(a[0]), a[1] === undefined ? '' : toStr(a[1])))
+      } catch (e) {
+        return self.throwError('SyntaxError', `Invalid regular expression: ${e instanceof Error ? e.message : String(e)}`, self.lastLine) as unknown as Value
+      }
+    }
+    g('RegExp', this.builtin('RegExp', function* (t, a) {
+      return regexCtor(t, a)
+    }, new Map<string, Value>([['__construct', this.fnBuiltin('new RegExp', regexCtor)]])))
 
     const collection = (kind: 'Map' | 'Set') =>
       this.builtin(kind, function* () {

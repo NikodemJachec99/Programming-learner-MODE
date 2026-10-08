@@ -428,3 +428,24 @@ test('panel: „Uruchom i porównaj” otwiera laboratorium w Zmianach, przypade
   expect(await ui.find({ key: 'sim-step' })).toBeDefined()
   await ui.unmount()
 })
+
+test('laboratorium na prawdziwym kodzie z regex i trimEnd (factsFromPatch z diff.ts)', async () => {
+  const { runBench } = await import('../hooks/engine/bench')
+  const code = [
+    'export function facts(lines: string[]) {',
+    String.raw`  const text = lines.join('\n').replace(/\n+$/, '')`,
+    '  return { n: lines.length, text: text.trimEnd() }',
+    '}',
+  ].join('\n')
+  const r = runBench([{ id: 'B', label: 'po', code, origin: 'after' }], ['facts([])', 'facts(["a ", "", ""])'], 'js')
+  expect(r.cells[0]![0]!.kind).toBe('ok')
+  expect(r.cells[1]![0]!.text).toContain('text: "a"')
+})
+
+test('„Warto zrozumieć” nie pokazuje podstaw, gdy w zmianie nic więcej nie ma; lekcja i tak ma o czym być', async () => {
+  const { interestingConcepts } = await import('../hooks/mentor')
+  expect(interestingConcepts(['variables', 'functions'], {})).toEqual([])
+  expect(interestingConcepts(['variables', 'functions'], {}, true)).toEqual(['variables'])
+  expect(interestingConcepts(['variables', 'async-await'], {})).toEqual(['async-await'])
+  expect(interestingConcepts(['async-await'], { 'async-await': 3 })).toEqual([])
+})

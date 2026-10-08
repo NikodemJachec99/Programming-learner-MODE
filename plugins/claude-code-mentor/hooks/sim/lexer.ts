@@ -2,7 +2,7 @@
 // Każdy token zna swoją pozycję w źródle, bo warianty "what-if" podmieniają
 // operatory i literały dokładnie w tym miejscu, bez zgadywania.
 
-export type TokenType = 'num' | 'str' | 'template' | 'ident' | 'kw' | 'punct' | 'eof'
+export type TokenType = 'num' | 'str' | 'template' | 'regex' | 'ident' | 'kw' | 'punct' | 'eof'
 
 export type TemplatePart = { kind: 'text'; text: string } | { kind: 'expr'; source: string; offset: number }
 
@@ -15,6 +15,8 @@ export type Token = {
   col: number
   /** Tylko dla 'template': części tekstu i wyrażeń. */
   parts?: TemplatePart[]
+  /** Tylko dla 'regex': flagi (np. g, i). Wzorzec jest w `value`. */
+  flags?: string
   /** Czy przed tokenem był znak nowej linii (dla ASI po return). */
   nlBefore: boolean
 }
@@ -36,6 +38,17 @@ const KEYWORDS = new Set([
   'case', 'default', 'import', 'export', 'from', 'interface', 'type', 'enum', 'void', 'delete',
   'instanceof',
 ])
+
+/** Po tych słowach kluczowych `/` zaczyna wyrażenie regularne, a nie dzielenie. */
+const REGEX_AFTER_KW = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'of', 'new', 'delete', 'void', 'throw', 'await', 'instanceof'])
+
+/** Czy w tym miejscu `/` otwiera literał regex: na początku wyrażenia, a nie po wartości. */
+function regexAllowed(prev: Token | undefined): boolean {
+  if (!prev) return true
+  if (prev.type === 'punct') return ![')', ']', '}', '++', '--'].includes(prev.value)
+  if (prev.type === 'kw') return REGEX_AFTER_KW.has(prev.value)
+  return false
+}
 
 const PUNCTS = [
   '>>>=', '===', '!==', '**=', '...', '<<=', '>>=', '>>>', '&&=', '||=', '??=',
@@ -173,6 +186,30 @@ export function tokenize(src: string): Token[] {
       i++
       if (text) parts.push({ kind: 'text', text })
       push('template', src.slice(start, i), start, { parts })
+      continue
+    }
+    if (c === '/' && regexAllowed(out[out.length - 1])) {
+      i++
+      let inClass = false
+      while (i < src.length && (src[i] !== '/' || inClass)) {
+        if (src[i] === '\n') err('Niezamknięte wyrażenie regularne')
+        if (src[i] === '\\') i++
+        else if (src[i] === '[') inClass = true
+        else if (src[i] === ']') inClass = false
+        i++
+      }
+      if (src[i] !== '/') err('Niezamknięte wyrażenie regularne')
+      const body = src.slice(start + 1, i)
+      i++
+      const fs = i
+      while (/[a-z]/.test(src[i] ?? '')) i++
+      const flags = src.slice(fs, i)
+      try {
+        new RegExp(body, flags)
+      } catch {
+        err(`Niepoprawne wyrażenie regularne /${body}/${flags}`)
+      }
+      push('regex', body, start, { flags })
       continue
     }
     const p = PUNCTS.find(p => src.startsWith(p, i))

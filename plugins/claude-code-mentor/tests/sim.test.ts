@@ -146,3 +146,19 @@ test('wycinek z lekcji: domknięte bloki i zaślepki zamiast błędu składni lu
   // bez trybu zaślepek semantyka JS zostaje: nieznana nazwa to ReferenceError
   expect(simulate('console.log(nieMa)').error?.message).toMatch(/ReferenceError: nieMa is not defined/)
 })
+
+test('regex: literały, replace z funkcją, split, match, test, new RegExp, a dzielenie dalej jest dzieleniem', () => {
+  const out = (src: string) => {
+    const r = simulate(src, { maxSteps: 3000 })
+    expect(r.error).toBe(undefined)
+    return r.output
+  }
+  expect(out(String.raw`console.log("a\nb\n\n".replace(/\n+$/, "").length)`)).toEqual(['3'])
+  expect(out(String.raw`console.log("x1y22z".replace(/\d+/g, m => "[" + m + "]"))`)).toEqual(['x[1]y[22]z'])
+  expect(out(String.raw`console.log("a, b,c".split(/,\s*/).length)`)).toEqual(['3'])
+  expect(out(String.raw`console.log(/^ab/i.test("ABc"), "abc".match(/b(c)/)[1], "q".search(/z/))`)).toEqual(['true c -1'])
+  expect(out(String.raw`const r = new RegExp("o", "g"); console.log("foo".replace(r, "0"), String(r))`)).toEqual(['f00 /o/g'])
+  expect(out(String.raw`const a = 10, b = 2, arr = [8]; console.log((a) / b / 1, arr[0] / 2, a/b)`)).toEqual(['5 4 5'])
+  expect(out(String.raw`console.log("  x ".trimEnd() + "|", " y".trimStart(), "abca".lastIndexOf("a"))`)).toEqual(['  x| y 3'])
+  expect(simulate('const r = /abc\nconsole.log(1)').error?.message).toContain('Niezamknięte wyrażenie regularne')
+})

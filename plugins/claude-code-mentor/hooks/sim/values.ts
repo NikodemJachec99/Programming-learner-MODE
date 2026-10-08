@@ -20,6 +20,8 @@ export type JsObject = {
   isError?: boolean
   /** Magazyn Map/Set (klucze porównywane jak SameValueZero). */
   internal?: Map<Value, Value> | Set<Value>
+  /** Wyrażenie regularne (literał /…/ albo new RegExp). */
+  regex?: RegExp
 }
 export type JsArray = { kind: 'array'; id: number; items: Value[]; lazy?: boolean }
 export type JsFunction = {
@@ -92,6 +94,7 @@ export function toPrimitive(v: Value, hint: 'number' | 'string' | 'default' = 'd
       return v.items.map(x => (x === null || x === undefined ? '' : toStr(x))).join(',')
     case 'object':
       if (v.isError) return `${toStr(v.props.get('name') ?? 'Error')}: ${toStr(v.props.get('message') ?? '')}`
+      if (v.regex) return String(v.regex)
       return hint === 'number' ? NaN : '[object Object]'
     case 'promise':
       return '[object Promise]'
@@ -233,6 +236,7 @@ export function display(v: Value, depth = 0, seen: Set<number> = new Set()): str
     }
     case 'object': {
       if (v.isError) return `${toStr(v.props.get('name'))}: ${toStr(v.props.get('message'))}`
+      if (v.regex) return String(v.regex)
       if (depth > 2) return '{…}'
       seen.add(v.id)
       const entries = [...v.props.entries()].slice(0, 10).map(([k, x]) => `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k)}: ${display(x, depth + 1, seen)}`)

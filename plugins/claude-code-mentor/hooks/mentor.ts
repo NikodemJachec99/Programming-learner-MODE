@@ -51,12 +51,13 @@ export const conceptById = (id: string): ConceptDef | undefined => BY_ID.get(id)
 
 /**
  * Pojęcia warte uwagi w zmianie: bez podstaw i bez tego, co już opanowane (poziom 3+),
- * najbardziej zaawansowane najpierw. Gdy nic nie zostaje, oddaje pierwsze z listy.
+ * najbardziej zaawansowane najpierw. Gdy nic nie zostaje: pusta lista do pokazania w panelu,
+ * a z `fallback` pierwsze pojęcie z listy (lekcja i ćwiczenie muszą mieć o czym być).
  */
-export function interestingConcepts(ids: readonly string[], levels: Record<string, number>): string[] {
+export function interestingConcepts(ids: readonly string[], levels: Record<string, number>, fallback = false): string[] {
   const known = [...new Set(ids)].filter(id => BY_ID.has(id))
   const picked = known.filter(id => !BASIC_CONCEPTS.has(id) && (levels[id] ?? 0) < 3).sort((a, b) => (DEPTH.get(b) ?? 0) - (DEPTH.get(a) ?? 0))
-  return picked.length ? picked : known.slice(0, 1)
+  return picked.length || !fallback ? picked : known.slice(0, 1)
 }
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -522,7 +523,7 @@ export class Mentor {
     // drugie kliknięcie chowa wyjaśnienie
     if ((await io.get(S.lab)).lessonFor === id) return void (await io.set(S.lab, l => ({ ...l, lessonFor: null, lessonId: null })))
     const levels = Object.fromEntries((await io.get(S.knowledge)).map(k => [k.id, k.level]))
-    const concept = interestingConcepts(c.concepts, levels)[0]
+    const concept = interestingConcepts(c.concepts, levels, true)[0]
     if (!concept) return
     const now = await io.now()
     const obsId = `chg-${id}`
@@ -547,7 +548,7 @@ export class Mentor {
     const c = this.changeCache.get(id)
     if (!c) return
     const levels = Object.fromEntries((await io.get(S.knowledge)).map(k => [k.id, k.level]))
-    const concept = interestingConcepts(c.concepts, levels)[0] ?? 'functions'
+    const concept = interestingConcepts(c.concepts, levels, true)[0] ?? 'functions'
     const now = await io.now()
     const built = changeQuestion(makeId('q', now), c, concept)
     if (built) return void (await this.presentQuiz(io, built, true))

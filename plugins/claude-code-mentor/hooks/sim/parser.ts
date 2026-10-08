@@ -778,6 +778,9 @@ class Parser {
       case 'str':
         this.i++
         return { ...at, type: 'Str', value: t.value }
+      case 'regex':
+        this.i++
+        return { ...at, type: 'Regex', pattern: t.value, flags: t.flags ?? '' }
       case 'template': {
         this.i++
         const parts = (t.parts ?? []).map(p =>
