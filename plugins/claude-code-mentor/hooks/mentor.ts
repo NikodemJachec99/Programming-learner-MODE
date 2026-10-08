@@ -34,6 +34,7 @@ import { PLACEMENT } from './engine/placement'
 import { caseStatement, nextVariantId } from './engine/bench'
 import type { Example } from './engine/examples'
 import { pairCall } from './sim/autocall'
+import { simTotal } from './ui/simcache'
 import { boundaryQuestion, fromTemplate, gradeChoice, gradeRequest, parseGrade, parseQuiz, predictOutputQuestion, quizRequest } from './engine/quiz'
 import type { Built, Grade } from './engine/quiz'
 import { isSensitivePath, redact, redactLines, safeSnippet } from './engine/redact'
@@ -486,7 +487,54 @@ export class Mentor {
     const fromDiff = suggestCall(c.after, c.unified, dialect)
     const shared = c.before ? pairCall(c.before, c.after, dialect) : null
     const cases = [...new Set([fromDiff.call ? fromDiff.hint : '', shared?.call ? shared.label ?? '' : ''].filter(Boolean))].slice(0, 3)
-    await io.set(S.lab, l => ({ ...l, bench: { forId: id, variants, cases, sel: variants[variants.length - 1]!.id, line: 1, error: null, handed: null } }))
+    await io.set(S.lab, l => ({ ...l, bench: { forId: id, variants, cases, sel: variants[variants.length - 1]!.id, line: 1, error: null, handed: null, reveal: cases.length ? 0 : undefined, frame: 0 } }))
+    if (cases.length) void this.animateBench(io, cases.length * variants.length)
+  }
+
+  private animToken = 0
+
+  /**
+   * Animacja uruchomienia laboratorium: komórki wyniku odsłaniają się po kolei, a liczona
+   * pokazuje, którą linię właśnie wykonuje. Nowe uruchomienie albo zamknięcie przerywa starą.
+   */
+  async animateBench(io: Host, cells: number, frames = 5): Promise<void> {
+    const token = ++this.animToken
+    const alive = async () => token === this.animToken && !!(await io.get(S.lab)).bench
+    for (let idx = 0; idx < cells; idx++) {
+      for (let f = 0; f < frames; f++) {
+        if (!(await alive())) return
+        await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: idx, frame: f } } : l))
+        if (!(await io.sleep(90))) return
+      }
+    }
+    if (await alive()) await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: undefined, frame: undefined } } : l))
+  }
+
+  /**
+   * Odtwarzanie w Symulatorze: kursor idzie sam, krok po kroku, w tempie dopasowanym do długości
+   * programu (około 8 s na całość, nie szybciej niż 70 ms i nie wolniej niż 600 ms na krok).
+   */
+  async playSim(io: Host, total?: number): Promise<void> {
+    const sim = await io.get(S.sim)
+    if (sim.playing) return void (await io.set(S.sim, s => ({ ...s, playing: false })))
+    total ??= simTotal(sim)
+    const token = ++this.animToken
+    const delay = Math.max(70, Math.min(600, Math.round(8000 / Math.max(1, total))))
+    await io.set(S.sim, s => ({ ...s, playing: true, cursor: s.cursor >= total - 1 ? 0 : s.cursor }))
+    while (token === this.animToken) {
+      const s = await io.get(S.sim)
+      if (!s.playing) return
+      if (s.cursor >= total - 1) break
+      if (!(await io.sleep(delay))) return
+      if (token !== this.animToken || !(await io.get(S.sim)).playing) return
+      await io.set(S.sim, x => ({ ...x, cursor: Math.min(total - 1, x.cursor + 1) }))
+    }
+    if (token === this.animToken) await io.set(S.sim, s => ({ ...s, playing: false }))
+  }
+
+  /** Zatrzymuje odtwarzanie (każdy ręczny ruch kursora). */
+  stopPlay(): void {
+    this.animToken++
   }
 
   /** Alternatywa od modelu jako kolejna wersja w laboratorium tej zmiany. */
@@ -507,8 +555,11 @@ export class Mentor {
   /** Przykład do nauki w Symulatorze: para A/B (przed i po przeróbce) albo jeden kod. */
   async showExample(io: Host, ex: Example): Promise<void> {
     const pair = ex.before ? { a: ex.before, b: ex.code, aStart: 1, bStart: 1, aLabel: 'przed', bLabel: 'po', hint: '' } : null
-    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect: ex.dialect, source: ex.code, origin: `przykład: ${ex.label}`, note: ex.note, pair, edits: [], cursor: 0, variant: (pair ? 'B' : 'A') as 'A' | 'B', panel: 'state' as const, callArgs: '' }))
+    this.stopPlay()
+    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect: ex.dialect, source: ex.code, origin: `przykład: ${ex.label}`, note: ex.note, pair, edits: [], cursor: 0, variant: (pair ? 'B' : 'A') as 'A' | 'B', panel: 'state' as const, callArgs: '', playing: false }))
     await io.set(S.tab, () => 'sim' as MentorTab)
+    // przykład od razu się odtwarza, drzewo widgetów nie ma kroków
+    if (!ex.widgets) void this.playSim(io)
   }
 
   /** „Krok po kroku” dla wybranej wersji i przypadku: pełny symulator w swojej zakładce. */
@@ -518,9 +569,10 @@ export class Mentor {
     const c = b ? this.changeCache.get(b.forId) : undefined
     const v = b?.variants.find(x => x.id === b.sel)
     if (!b || !c || !v) return
+    this.stopPlay()
     const dialect = simDialect(c.lang) ?? 'js'
     const call = b.cases[caseIndex]
-    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: v.code, origin: `${c.file}: ${v.id} ${v.label}`, note: undefined, pair: null, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: call ? caseStatement(call, dialect) : '' }))
+    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: v.code, origin: `${c.file}: ${v.id} ${v.label}`, note: undefined, playing: false, pair: null, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: call ? caseStatement(call, dialect) : '' }))
     await io.set(S.tab, () => 'sim' as MentorTab)
   }
 

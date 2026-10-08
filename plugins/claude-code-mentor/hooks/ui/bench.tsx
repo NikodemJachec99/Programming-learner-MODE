@@ -14,6 +14,7 @@ import { S } from './state'
 
 const editable = (v: MentorBenchVariant) => v.origin === 'edit' || v.origin === 'alt'
 const CELL_COLOR = { ok: undefined, error: 'error', assumed: 'warning', missing: 'subtle' } as const
+const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang: string, dialect: 'js' | 'dart'): RenderElement {
   const { Box, Text, Button, Input, Select } = k.E
@@ -23,6 +24,12 @@ export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang
   const nameW = Math.max(...b.variants.map(v => `${v.id} ${v.label}`.length), 4) + 2
   const short = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
   const lines = sel.code.split('\n')
+  // animacja uruchomienia: komórki do `reveal` są gotowe, `reveal` właśnie się liczy
+  const running = b.reveal !== undefined
+  const V = b.variants.length
+  const total = b.cases.length * V
+  const done = running ? b.reveal! : total
+  const state = (i: number, j: number): 'done' | 'run' | 'wait' => (!running ? 'done' : i * V + j < b.reveal! ? 'done' : i * V + j === b.reveal ? 'run' : 'wait')
   const line = Math.min(Math.max(1, b.line), lines.length)
 
   const copy = () =>
@@ -35,7 +42,8 @@ export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang
 
   return (
     <Box flexDirection="column">
-      {label(k, 'Laboratorium', 'symulator, pliki bez zmian')}
+      {label(k, 'Laboratorium', running ? `${SPIN[(b.frame ?? 0) % SPIN.length]} uruchamiam ${done + 1}/${total}` : 'symulator, pliki bez zmian')}
+      {running && <Text color="claude">{`${'▰'.repeat(Math.round((done / Math.max(1, total)) * 16))}${'▱'.repeat(16 - Math.round((done / Math.max(1, total)) * 16))}`}</Text>}
 
       {/* wersje */}
       <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
@@ -57,17 +65,23 @@ export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang
         <Box key={`bc-${i}`} flexDirection="column" marginTop={1}>
           <Box flexDirection="row" columnGap={1}>
             <Text bold wrap="truncate-end">{c}</Text>
-            {differs[i] && <Text color="warning">● różne wyniki</Text>}
+            {differs[i] && state(i, V - 1) === 'done' && <Text color="warning">● różne wyniki</Text>}
             <Button key={`bc-x-${i}`} plain dimColor onPress={() => set(x => ({ ...x, cases: x.cases.filter((_, j) => j !== i) }))}>
               ✕
             </Button>
           </Box>
           {b.variants.map((v, j) => {
             const cell = cells[i]![j]!
+            const st = state(i, j)
+            // liczona komórka pokazuje linię, którą symulator właśnie wykonuje
+            const f = b.frame ?? 0
+            const at = cell.trace.length ? cell.trace[Math.min(cell.trace.length - 1, Math.floor(((f + 1) / 5) * cell.trace.length))]! : 0
             return (
               <Text key={`bc-${i}-${v.id}`} wrap="truncate-end">
                 <Text dimColor>{`  ${`${v.id} ${short(v.label, 18)}`.padEnd(nameW)}`}</Text>
-                <Text color={CELL_COLOR[cell.kind]}>{`${cell.kind === 'assumed' ? '≈ ' : ''}${cell.text}`}</Text>
+                {st === 'done' && <Text color={CELL_COLOR[cell.kind]}>{`${cell.kind === 'assumed' ? '≈ ' : ''}${cell.text}`}</Text>}
+                {st === 'run' && <Text color="claude">{`${SPIN[f % SPIN.length]} wykonuję${at ? ` linię ${at}` : ''}${cell.trace.length ? ` · krok ${Math.min(cell.trace.length, Math.ceil(((f + 1) / 5) * cell.trace.length))}/${cell.trace.length}` : ''}`}</Text>}
+                {st === 'wait' && <Text dimColor>·</Text>}
               </Text>
             )
           })}
@@ -120,6 +134,11 @@ export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang
       )}
 
       <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
+        {b.cases.length > 0 && (
+          <Button key="bench-replay" plain dimColor onPress={() => (set(x => ({ ...x, reveal: 0, frame: 0 })), void mentor.animateBench(io, b.cases.length * b.variants.length))}>
+            {running ? 'uruchamiam…' : '▶ jeszcze raz'}
+          </Button>
+        )}
         <Button key="bench-step" onPress={() => mentor.benchStep(io, 0)}>
           {`Krok po kroku (${sel.id})`}
         </Button>

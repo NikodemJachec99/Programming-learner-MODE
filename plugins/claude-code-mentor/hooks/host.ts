@@ -12,6 +12,8 @@ export type Host = {
   set: <K extends StateKey>(k: K, change: (v: StateShape[K]) => NoInfer<StateShape[K]>) => Promise<StateShape[K]>
   invalidate: () => void
   now: () => Promise<number>
+  /** Pauza do animacji (odtwarzanie kroków). False, gdy przerwana (np. przeładowanie moda). Bez sesji wraca od razu. */
+  sleep: (ms: number) => Promise<boolean>
   sessionId: () => Promise<string>
   sessionRoot: () => Promise<string>
   version: () => Promise<string>
@@ -58,6 +60,7 @@ export function offlineHost(base: Pick<Host, 'get' | 'set' | 'now' | 'invalidate
     ...base,
     sessionId: () => Promise.resolve('test'),
     sessionRoot: () => Promise.resolve(''),
+    sleep: () => Promise.resolve(true),
     version: () => Promise.resolve('?'),
     isGitRepo: () => Promise.resolve(false),
     surfaces: () => Promise.resolve([]),

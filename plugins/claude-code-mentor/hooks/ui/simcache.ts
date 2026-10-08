@@ -7,6 +7,9 @@ import { dartToJs } from '../sim/dart'
 import { healBraces, healJs } from '../sim/heal'
 import { findSites } from '../sim/variants'
 import type { OpSite, ValueSite } from '../sim/variants'
+import { applyEdits } from '../sim/variants'
+import { autoCall, looksLikeCall, pairCall } from '../sim/autocall'
+import type { MentorSimState } from '../../types'
 
 export type Dialect = 'js' | 'dart'
 
@@ -28,6 +31,26 @@ export function simulateCached(source: string, dialect: Dialect = 'js'): SimResu
   cache.set(key, r)
   if (cache.size > 24) cache.delete(cache.keys().next().value as string)
   return r
+}
+
+/** Kod do wykonania: wariant, a do tego wywołanie (wpisane albo dobrane automatycznie). */
+export function program(s: MentorSimState, variant: 'A' | 'B'): string {
+  const base = s.pair ? (variant === 'A' ? s.pair.a : s.pair.b) : variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source
+  // para: jedno wywołanie, które istnieje w A i w B, inaczej żadne
+  if (s.pair) {
+    const pc = pairCall(s.pair.a, s.pair.b, s.dialect ?? 'js', s.callArgs)
+    return pc.call ? `${base}\n${pc.call}` : base
+  }
+  const call = s.callArgs.trim()
+  if (call && looksLikeCall(call)) return `${base}\n${call}`
+  const ac = autoCall(base, s.dialect ?? 'js')
+  return ac ? `${base}\n${ac.call}` : base
+}
+
+/** Liczba kroków bieżącego wariantu (do odtwarzania). */
+export function simTotal(s: MentorSimState): number {
+  const variant = s.pair || s.edits.length ? s.variant : 'A'
+  return Math.max(1, simulateCached(program(s, variant), s.dialect ?? 'js').steps.length)
 }
 
 const DART_OP: Record<string, string> = { '===': '==', '!==': '!=' }

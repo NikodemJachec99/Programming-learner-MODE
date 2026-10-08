@@ -7,7 +7,7 @@
   <a href="#wymagania"><img alt="Windows i macOS" src="https://img.shields.io/badge/Windows%20%7C%20macOS-0078d4?style=flat-square"></a>
   <a href="#flutter-i-dart"><img alt="Flutter i Dart" src="https://img.shields.io/badge/Flutter%20%26%20Dart-02569B?style=flat-square&logo=flutter&logoColor=white"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-100%20%2F%20100-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-101%20%2F%20101-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licencja-MIT-6b7280?style=flat-square"></a>
 </p>
@@ -264,7 +264,8 @@ Deterministyczny interpreter podzbioru JavaScript i TypeScript, napisany od zera
 
 | Funkcja | Opis |
 |---|---|
-| `↺` `◀` `Krok ▶` `Do końca ⏭` | przejście po krokach w obie strony |
+| `▶ Odtwórz` | kod wykonuje się sam, krok po kroku: podświetlona linia, zmienne i wyjście zmieniają się na oczach, pasek postępu pokazuje, ile zostało. Tempo dopasowane do długości (ok. 8 s na całość), `⏸ Pauza` w każdej chwili. Przykład z „Zobacz na przykładzie” odtwarza się od razu |
+| `↺` `◀` `Krok ▶` `⏭` | ręczne przejście po krokach w obie strony |
 | Karta kroku | linia, „dlaczego teraz”, zmienne, stos, kolejki i wyjście w jednym miejscu, „więcej o tym kroku” na życzenie |
 | Przykładowe dane | kod, który tylko definiuje funkcje, dostaje wywołanie z danymi dobranymi z typów i nazw parametrów (np. `loadOrders(["1", "2"])`). Własne wywołanie wpisujesz obok |
 | Zmienne i stos | wartości przed i po, zmienione zmienne podświetlone, ramki wywołań z argumentami |
@@ -400,7 +401,7 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 77 / 77 |
+| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 78 / 78 |
 | `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian | 18 / 18 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |

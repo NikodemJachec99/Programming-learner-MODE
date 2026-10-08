@@ -198,6 +198,8 @@ export type MentorSimState = {
   origin: string
   /** Przykład do nauki: na co patrzeć. Pusty dla kodu z projektu. */
   note?: string
+  /** Trwa odtwarzanie krok po kroku (animacja). */
+  playing?: boolean
   mode: 'js' | 'sql' | 'cond'
   /** Język kodu w trybie 'js': JavaScript/TypeScript albo Dart. */
   dialect?: 'js' | 'dart'
@@ -258,6 +260,9 @@ export type MentorBench = {
   line: number
   error: string | null
   handed: string | null
+  /** Animacja uruchomienia: ile komórek wyniku już odsłonięto i klatka wskaźnika liczonej komórki. */
+  reveal?: number
+  frame?: number
 }
 
 export type MentorLab = {

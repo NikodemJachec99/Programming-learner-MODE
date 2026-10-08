@@ -41,6 +41,7 @@ function makeHost($: EngineInterface): Host {
   return {
     ...stateOps(() => $.ui.invalidate('ui.render')),
     now: () => $.clock.now(),
+    sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
     sessionId: () => $.session.id(),
     sessionRoot: () => $.session.root(),
     version: async () => (await $.session.version()).version,
@@ -216,6 +217,7 @@ export const register: Register = on => {
     const io = scoped({
       ...stateOps(() => $.ui.invalidate('ui.render')),
       now: () => $.clock.now(),
+      sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
       openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
       selection: () => $.ui.selection(),
       fsRead: path => $.fs.read(path),
@@ -316,6 +318,7 @@ export const register: Register = on => {
     const io = scoped({
       ...stateOps(() => $.ui.invalidate('ui.render')),
       now: () => $.clock.now(),
+      sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
       openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
       fillPrompt: async text => (await $.prompt.fill({ text })).isFilled,
     })
@@ -327,6 +330,7 @@ export const register: Register = on => {
     const io = scoped({
       ...stateOps(() => $.ui.invalidate('ui.render')),
       now: () => $.clock.now(),
+      sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
       openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
     })
     const E = $.ui.resolve(e) as El

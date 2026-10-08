@@ -410,7 +410,7 @@ test('laboratorium: wersje A/B/C na jawnych przypadkach, edycja tylko kopii, bra
 })
 
 test('panel: „Uruchom i porównaj” otwiera laboratorium w Zmianach, przypadek i kopia działają bez zmiany zakładki', async ($, on) => {
-  mock.clock(on, { now: 1_760_000_000_000 })
+  const clock = mock.clock(on, { now: 1_760_000_000_000 })
   on('tool.call', { tool: 'Edit' }, () => edit('C:/p/src/bench.ts', BEFORE, PATCH))
   await $.tool.call({ tool: 'Edit', file_path: 'C:/p/src/bench.ts', old_string: 'x < 10', new_string: 'x <= 10' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
@@ -418,6 +418,10 @@ test('panel: „Uruchom i porównaj” otwiera laboratorium w Zmianach, przypade
   const row = await ui.find({ type: 'Button', text: /bench\.ts/ })
   await ui.press({ key: row!.key! })
   await ui.press({ key: 'lab-run' })
+  // wyniki odsłaniają się po kolei; w trakcie widać, co się liczy
+  expect(await ui.find({ type: 'Text', text: /wykonuję/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /różne wyniki/ })).toBe(undefined)
+  await clock.advance(5000)
   expect(await ui.find({ type: 'Text', text: /różne wyniki/ })).toBeDefined()
   await ui.input({ key: 'bench-case', text: 'label(3)', kind: 'submit' })
   expect(await ui.find({ type: 'Text', text: /^label\(3\)$/ })).toBeDefined()

@@ -6,7 +6,7 @@ import type { RenderElement } from 'claude-code'
 import type { MentorSimState } from '../../types'
 import { mentor } from '../mentor'
 import { detectConcepts } from '../engine/detect'
-import { BOUNDARY_NOTE, dialectOps, simSites, simulateCached } from './simcache'
+import { BOUNDARY_NOTE, dialectOps, program, simSites, simulateCached } from './simcache'
 import type { Dialect } from './simcache'
 import { isFlutterUi, looksLikeDart, widgetTree } from '../sim/dart'
 import { COND_OPS, LANG_NAMES, boundaryTable, evalCond, parseLiteral, showLit } from '../sim/conditions'
@@ -23,27 +23,21 @@ import type { SqlRun } from '../store/db'
 export async function loadSim(io: Host, source: string, origin: string, lang?: string): Promise<void> {
   const isSql = /^\s*(select|with|insert|update|delete)\b/i.test(source)
   const dialect: Dialect = lang === 'dart' || (lang === undefined && looksLikeDart(source)) ? 'dart' : 'js'
-  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, pair: null, source, origin, note: undefined, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
+  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, pair: null, source, origin, note: undefined, playing: false, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
   await io.set(S.tab, () => 'sim' as const)
 }
 
-/** Kod do wykonania: wariant, a do tego wywołanie (wpisane albo dobrane automatycznie). */
-function program(s: MentorSimState, variant: 'A' | 'B'): string {
-  const base = s.pair ? (variant === 'A' ? s.pair.a : s.pair.b) : variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source
-  // para: jedno wywołanie, które istnieje w A i w B, inaczej żadne
-  if (s.pair) {
-    const pc = pairCall(s.pair.a, s.pair.b, s.dialect ?? 'js', s.callArgs)
-    return pc.call ? `${base}\n${pc.call}` : base
-  }
-  const call = s.callArgs.trim()
-  if (call && looksLikeCall(call)) return `${base}\n${call}`
-  const ac = autoCall(base, s.dialect ?? 'js')
-  return ac ? `${base}\n${ac.call}` : base
+
+/** Pasek postępu z bloków, np. ▰▰▰▱▱▱ 12/32. */
+export function progressBar(done: number, total: number, width = 16): string {
+  const n = Math.max(0, Math.min(width, Math.round((done / Math.max(1, total)) * width)))
+  return `${'▰'.repeat(n)}${'▱'.repeat(width - n)}`
 }
 
-function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B', paired: boolean): RenderElement {
+function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B', paired: boolean, playing: boolean): RenderElement {
   const { Box, Button, Text } = k.E
-  const set = (fn: (s: MentorSimState) => MentorSimState) => () => io.set(S.sim, fn)
+  // każdy ręczny ruch zatrzymuje odtwarzanie
+  const set = (fn: (s: MentorSimState) => MentorSimState) => () => (mentor.stopPlay(), io.set(S.sim, s => ({ ...fn(s), playing: false })))
   const clamp = (n: number) => Math.max(0, Math.min(total - 1, n))
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1} alignItems="center">
@@ -53,11 +47,14 @@ function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean
       <Button key="sim-back" onPress={set(s => ({ ...s, cursor: clamp(s.cursor - 1) }))}>
         ◀
       </Button>
-      <Button key="sim-step" variant="primary" onPress={set(s => ({ ...s, cursor: clamp(s.cursor + 1) }))}>
+      <Button key="sim-play" variant="primary" onPress={() => void mentor.playSim(io, total)}>
+        {playing ? '⏸ Pauza' : cursor >= total - 1 && total > 1 ? '↻ Odtwórz jeszcze raz' : '▶ Odtwórz'}
+      </Button>
+      <Button key="sim-step" onPress={set(s => ({ ...s, cursor: clamp(s.cursor + 1) }))}>
         Krok ▶
       </Button>
-      <Button key="sim-run" onPress={set(s => ({ ...s, cursor: total - 1 }))}>
-        Do końca ⏭
+      <Button key="sim-run" plain dimColor onPress={set(s => ({ ...s, cursor: total - 1 }))}>
+        ⏭
       </Button>
       {hasB && (
         <Button key="sim-compare" onPress={set(s => ({ ...s, panel: s.panel === 'compare' ? 'state' : 'compare' }))}>
@@ -69,7 +66,7 @@ function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean
           {variant === 'A' ? 'pokaż B' : 'pokaż A'}
         </Button>
       )}
-      <Text dimColor>{`${cursor + 1}/${total}`}</Text>
+      <Text color={playing ? 'claude' : undefined} dimColor={!playing}>{`${progressBar(cursor + 1, total, 12)} ${cursor + 1}/${total}`}</Text>
     </Box>
   )
 }
@@ -212,7 +209,7 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
       {pc?.problem && <Text color="warning" wrap="wrap">{pc.problem}</Text>}
       {badCall && <Text color="warning" wrap="wrap">{`„${typed}” to nie jest wywołanie funkcji${auto ? `, więc uruchamiam ${auto.label}. Wpisz np. ${auto.label}` : '. Wpisz np. nazwa(1, 2)'}.`}</Text>}
       <Input key="sim-call" label={pair ? 'Wywołanie (A i B):' : 'Wywołanie:'} placeholder={auto ? auto.label : pair?.hint ? pair.hint : 'np. add(2, 3)'} value={s.callArgs} submitLabel="uruchom" onSubmit={value => io.set(S.sim, x => ({ ...x, callArgs: value, cursor: 0 }))} />
-      {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair)}
+      {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair, !!s.playing)}
       {panel}
       {r.error && r.error.kind !== 'syntax' && <Text color="error" wrap="wrap">{r.error.message}</Text>}
       {r.hypotheses.length > 0 && card(k, 'warning', <Text color="warning">Założenia symulatora</Text>, ...r.hypotheses.map((x, i) => <Text key={`hy-${i}`} dimColor wrap="wrap">{`• ${x}`}</Text>))}

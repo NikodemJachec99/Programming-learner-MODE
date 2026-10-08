@@ -12,6 +12,11 @@
 - Symulator rozumie wyrażenia regularne (`/…/g`, `new RegExp`, `replace` z funkcją, `split`, `match`, `test`, `search`) i ma `trimStart`, `trimEnd`, `lastIndexOf` i kilka innych metod napisów. Wcześniej kod z regexem kończył się błędem „Nieznany znak”.
 - „Warto zrozumieć” nie pokazuje podstaw, gdy w zmianie nie ma nic poza nimi.
 
+### Animacja uruchomienia
+
+- Symulator: „▶ Odtwórz” przechodzi kod sam, krok po kroku, z podświetloną linią, zmiennymi, wyjściem i paskiem postępu. Tempo dopasowane do długości, „⏸ Pauza” w każdej chwili, każdy ręczny krok zatrzymuje odtwarzanie. Przykład do nauki odtwarza się od razu.
+- Laboratorium: po „Uruchom i porównaj” wyniki odsłaniają się po kolei, a liczona komórka pokazuje, którą linię i który krok właśnie wykonuje. „▶ jeszcze raz” powtarza animację.
+
 ### Prawdziwy kod czy przykład
 
 - Zmiany pokazują prawdziwy kod (przed, po, wyjaśnienie, testy przez Claude), a Symulator uczy na czystych przykładach.

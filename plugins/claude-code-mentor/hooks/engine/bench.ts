@@ -6,7 +6,7 @@ import type { MentorBenchVariant } from '../../types'
 import { definesName, looksLikeCall } from '../sim/autocall'
 import { simulateCached } from '../ui/simcache'
 
-export type BenchCell = { text: string; kind: 'ok' | 'error' | 'assumed' | 'missing' }
+export type BenchCell = { text: string; kind: 'ok' | 'error' | 'assumed' | 'missing'; /** Linie kolejnych kroków (do animacji). */ trace: number[] }
 
 const BUILTIN = new Set(['console', 'log', 'print', 'await', 'JSON', 'stringify', 'Math', 'String', 'Number', 'Promise', 'Object', 'Array', 'parse'])
 const MAX_OUT = 120
@@ -29,15 +29,16 @@ export function caseStatement(call: string, dialect: 'js' | 'dart'): string {
 /** Jeden przypadek na jednej wersji kodu. */
 export function runCase(code: string, call: string, dialect: 'js' | 'dart'): BenchCell {
   const missing = calledNames(call).filter(n => !definesName(code, n, dialect))
-  if (missing.length) return { text: `brak \`${missing[0]}\` w tej wersji`, kind: 'missing' }
+  if (missing.length) return { text: `brak \`${missing[0]}\` w tej wersji`, kind: 'missing', trace: [] }
   const r = simulateCached(`${code}\n${caseStatement(call, dialect)}`, dialect)
+  const trace = r.steps.slice(0, 400).map(s => s.line)
   if (!r.ok) {
     const msg = r.error?.message ?? 'nie da się wykonać'
-    return { text: `błąd: ${msg.length > MAX_OUT ? msg.slice(0, MAX_OUT - 1) + '…' : msg}`, kind: 'error' }
+    return { text: `błąd: ${msg.length > MAX_OUT ? msg.slice(0, MAX_OUT - 1) + '…' : msg}`, kind: 'error', trace }
   }
   const out = r.output.join(' | ') || '(nic nie wypisało)'
   const text = out.length > MAX_OUT ? out.slice(0, MAX_OUT - 1) + '…' : out
-  return { text, kind: r.assumed ? 'assumed' : 'ok' }
+  return { text, kind: r.assumed ? 'assumed' : 'ok', trace }
 }
 
 /**
