@@ -1,0 +1,21 @@
+name: Pomysł
+description: Nowa funkcja albo ulepszenie
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Jaki problem to rozwiązuje
+      description: Co Ci przeszkadza albo czego brakuje w nauce z Mentorem.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Jak by to mogło działać
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: Wkład
+      options:
+        - label: Chcę to zrobić sam i wysłać PR
