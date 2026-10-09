@@ -236,7 +236,7 @@ test('panel: „Sprawdź się” bez symulatora to zgadywanie: kod przed, podpow
   await ui.press({ key: 'lab-g-hint' })
   expect(await ui.find({ type: 'Markdown', text: /linii 2/ })).toBeDefined()
   await ui.press({ key: 'lab-g-reveal' })
-  expect(await ui.find({ type: 'Code', text: /x <= 10/ })).toBeDefined()
+  expect(await ui.find({ type: 'Svg', alt: /\+ {2}if \(x <= 10\)/ })).toBeDefined()
   await ui.unmount()
 })
 

@@ -12,13 +12,22 @@ import { offlineHost, stateOps } from './host'
 import type { Host } from './host'
 import { mentor } from './mentor'
 import type { El } from './ui/kit'
-import { renderBar } from './ui/bar'
+import { HISTORY_TURNS, renderBar } from './ui/bar'
+import { AGENTS_PANE, renderAgentsPane, renderFlowBand } from './ui/agents'
+import { FILES_PANE, renderFilesPane } from './ui/files'
+import { TASKS_PANE, renderTasksPane } from './ui/tasks'
+import { newTurn, touchEnd, touchStart } from './engine/activity'
+import { agentTool, costOf, describeTool, endAgent, modelName, spawnAgent, stepAgent } from './engine/agents'
+import { endTask, outputPathFrom, parseNotification, startTask } from './engine/tasks'
+import type { ActKind } from './engine/activity'
 import type { BarRow } from './ui/bar'
 import { PANE_ID, PANE_TITLE, renderBand, renderPane } from './ui/pane'
 import { loadSim } from './ui/sim'
 import { getState, S, setState } from './ui/state'
 
 const OBSERVED = new Set(['Edit', 'Write', 'NotebookEdit', 'Bash'])
+/** Narzędzia, których pliki pokazuje mapa aktywności (Read tylko pasywnie, bez wpływu na wiedzę). */
+const FILE_TOOLS: Record<string, ActKind | undefined> = { Read: 'read', Edit: 'edit', Write: 'edit', NotebookEdit: 'edit' }
 
 const HELP = [
   '/mentor            otwiera panel',
@@ -75,6 +84,17 @@ function makeHost($: EngineInterface): Host {
     pluginRoot: $.plugin.root,
     fsRead: path => $.fs.read(path),
     fsExists: path => $.fs.exists(path),
+    fsList: path => $.fs.list(path),
+    openFiles: () => openFilesPane($),
+    openTasks: () => $.ui.open({ id: TASKS_PANE, title: 'Zadania w tle' }),
+    stopTask: async id => {
+      const r = (await $.tool.call({ tool: 'TaskStop', task_id: id } as never).catch(() => null)) as { isError?: true } | null
+      if (r && !r.isError) {
+        const at = await $.clock.now()
+        setState('tasks', list => endTask(list, id, 'killed', at))
+        $.ui.invalidate('ui.render')
+      }
+    },
     run: (argv, init) => $.process.run(argv, init),
     storeGet: key => $.store.get(key),
     storeSet: (key, value) => $.store.set(key, value),
@@ -83,6 +103,8 @@ function makeHost($: EngineInterface): Host {
     log: text => $.ui.log(text, { to: 'debug' }),
     toast: text => $.ui.toast(text),
     openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
+    openAgents: () => $.ui.open({ id: AGENTS_PANE, title: 'Agenci' }),
+    toggleAgents: () => toggleAgentsPane($),
     panes: () => $.ui.panes(),
     selection: () => $.ui.selection(),
   }
@@ -148,6 +170,45 @@ async function refreshBar($: EngineInterface): Promise<void> {
   }
 }
 
+/** Zapisuje zajętość kontekstu po turze do historii paska (przeżywa przeładowanie moda). */
+async function recordTurnUsage($: EngineInterface): Promise<void> {
+  await refreshBar($)
+  const total = getState('bar').snap?.totalTokens
+  if (!total) return
+  const sid = await $.session.id()
+  setState('bar', x => ({ ...x, history: [...x.history, total].slice(-HISTORY_TURNS) }))
+  await $.store.set('bar-history', { sessionId: sid, history: getState('bar').history })
+  $.ui.invalidate('ui.render')
+}
+
+/** Po przeładowaniu: historia tej samej sesji wraca ze $.store. */
+async function loadTurnUsage($: EngineInterface): Promise<void> {
+  const saved = (await $.store.get('bar-history')) as { sessionId?: string; history?: number[] } | undefined
+  if (!saved?.history || saved.sessionId !== (await $.session.id())) return
+  setState('bar', x => (x.history.length ? x : { ...x, history: saved.history!.slice(-HISTORY_TURNS) }))
+}
+
+/** Tura, w której panel agentów otworzył się sam (raz na turę). */
+let agentsPaneTurn = -1
+/** Tura, w której panel zadań w tle otworzył się sam (raz na turę). */
+let tasksPaneTurn = -1
+
+/** Panel „Pliki” z nazwą projektu w tytule (jak „Files: weather-app”). */
+function openFilesPane($: EngineInterface) {
+  const name = (mentor.projectRoot || '').replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()
+  return $.ui.open({ id: FILES_PANE, title: name ? `Pliki: ${name}` : 'Pliki' })
+}
+
+/** Otwiera panel agentów albo zamyka, gdy już jest (togglePane z savvy-progress). True, gdy otwarty. */
+async function toggleAgentsPane($: EngineInterface): Promise<boolean> {
+  if ((await $.ui.panes()).some(p => p.id === AGENTS_PANE)) {
+    await $.ui.close({ id: AGENTS_PANE })
+    return false
+  }
+  await $.ui.open({ id: AGENTS_PANE, title: 'Agenci' })
+  return true
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
@@ -158,12 +219,28 @@ export const register: Register = on => {
         argumentHint: '[explain|quiz|sim|recap|progress|path|pause|resume|settings|help]',
         immediate: true,
       })
+      await $.command.register({
+        name: 'mentor-tasks',
+        description: 'Mentor: panel zadań w tle (co robią, wyjście na żywo, czas, zatrzymanie)',
+        immediate: true,
+      })
+      await $.command.register({
+        name: 'mentor-files',
+        description: 'Mentor: panel plików (co Claude teraz robi, czego dotknął, drzewo projektu z gitem)',
+        immediate: true,
+      })
+      await $.command.register({
+        name: 'mentor-agents',
+        description: 'Mentor: pokaż albo schowaj panel agentów (pracują, skończeni, zadania w tle, kontekst, koszt, czas)',
+        immediate: true,
+      })
     } catch (err) {
       $.ui.log(`claude-code-mentor: rejestracja /mentor: ${String(err)}`, { to: 'debug' })
     }
     // Start w tle: sesja nie czeka na bazę.
     startSession($, e.cwd, e.surface, true)
     void refreshBar($)
+    void loadTurnUsage($).catch(() => undefined)
     // licznik cache promptu na pasku: przerysowanie co 5 s, bez wywołań API
     $.clock.every(5000, () => $.ui.invalidate('ui.render'))
     return started
@@ -172,7 +249,22 @@ export const register: Register = on => {
   on('prompt.submit', ($, e, next) => {
     try {
       ensureSession($)
-      if (e.origin.kind !== 'plugin') mentor.onPrompt(e.text)
+      // koniec zadania w tle: powiadomienie z task-id i statusem (to nie jest polecenie użytkownika)
+      const note = e.origin.kind === 'task-notification' ? parseNotification(e.text) : null
+      if (note) {
+        void (async () => {
+          const at = await $.clock.now()
+          setState('tasks', list => endTask(list, note.id, note.status, at, note.summary))
+          await mentor.readTask(ensureSession($), note.id, note.outputFile)
+        })().catch(() => undefined)
+      } else if (e.origin.kind !== 'plugin' && e.origin.kind !== 'task-notification') {
+        mentor.onPrompt(e.text)
+        setState('activity', newTurn)
+        void $.clock.now().then(at => {
+          mentor.startWork(at)
+          mentor.wake(ensureSession($))
+        })
+      }
     } catch {
       /* obserwacja nie może blokować promptu */
     }
@@ -180,7 +272,55 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
+    // aktywność plików (odczyt, edycja): tylko zapis stanu, wynik narzędzia przechodzi bez zmian
+    const kind = FILE_TOOLS[String(e.tool)]
+    const input = e as unknown as Record<string, unknown>
+    const file = kind ? String(input.file_path ?? input.notebook_path ?? '') : ''
+    if (kind && file) {
+      const t0 = await $.clock.now()
+      setState('activity', a => touchStart(a, file, kind, t0))
+      $.ui.invalidate('ui.render')
+    }
+    // co robi subagent (tylko opis czynności; wynik narzędzia bez zmian)
+    const agentId = (e as { agentId?: string }).agentId
+    if (agentId) {
+      setState('agents', list => agentTool(list, agentId, describeTool(String(e.tool), input)))
+      $.ui.invalidate('ui.render')
+    }
+    mentor.workStep(String(e.tool))
     const ran = await next(e)
+    // zadania w tle: start (Bash z backgroundTaskId) i zatrzymanie (TaskStop); wynik bez zmian
+    if (e.tool === 'Bash') {
+      const bgId = ((ran as { result?: { backgroundTaskId?: string } }).result ?? {}).backgroundTaskId
+      if (bgId) {
+        const t2 = await $.clock.now()
+        setState('tasks', list => startTask(list, { id: bgId, command: String(input.command ?? ''), description: String(input.description ?? ''), outputFile: outputPathFrom((ran as { text?: string }).text), at: t2 }))
+        mentor.wake(ensureSession($))
+        // panel zadań w tle otwiera się sam raz na turę, jeśli autootwieranie jest włączone
+        if (getState('settings').autoOpen && tasksPaneTurn !== mentor.turn) {
+          tasksPaneTurn = mentor.turn
+          void $.ui.open({ id: TASKS_PANE, title: 'Zadania w tle' }).catch(() => undefined)
+        }
+      }
+    }
+    if (e.tool === 'TaskStop' && (input.task_id || input.shell_id)) {
+      const t3 = await $.clock.now()
+      setState('tasks', list => endTask(list, String(input.task_id ?? input.shell_id), 'killed', t3))
+      $.ui.invalidate('ui.render')
+    }
+    if (kind && file) {
+      const r = ran as { isError?: true; deny?: string }
+      const t1 = await $.clock.now()
+      setState('activity', a => touchEnd(a, file, kind, !r.isError && r.deny === undefined, t1, r.deny !== undefined))
+      mentor.wake(ensureSession($))
+    }
+    // pliki i git: odświeżenie po edycji i komendzie, commit Claude zapamiętany (filetree)
+    if (kind === 'edit' || e.tool === 'Bash' || e.tool === 'PowerShell') {
+      const r = ran as { isError?: true; deny?: string }
+      const fio = ensureSession($)
+      if (/\bgit\b[^|;&\n]*\bcommit\b/.test(String(input.command ?? '')) && !r.isError && r.deny === undefined) void mentor.noteCommit(fio)
+      else mentor.filesSoon(fio)
+    }
     const io = OBSERVED.has(String(e.tool)) ? ensureSession($) : HOST
     if (io && OBSERVED.has(String(e.tool))) {
       try {
@@ -199,17 +339,112 @@ export const register: Register = on => {
     return result
   })
 
+  // subagenci: start (agent.spawn), koniec (turn.complete z agentId); zdarzenia przechodzą bez zmian
+  on('agent.spawn', async ($, e, next) => {
+    const started = await next(e)
+    if (started.deny !== undefined) return started
+    const at = await $.clock.now()
+    setState('agents', list =>
+      spawnAgent(list, { id: started.agentId ?? e.tool_use_id, agentId: started.agentId, type: e.subagentType, description: e.description, model: modelName(started.model ?? ''), at, turn: mentor.turn }),
+    )
+    mentor.wake(ensureSession($))
+    // boczny panel „Agenci” otwiera się sam raz na turę (jak savvy-progress), jeśli autootwieranie jest włączone
+    const settings = getState('settings')
+    if (settings.autoOpen && agentsPaneTurn !== mentor.turn) {
+      agentsPaneTurn = mentor.turn
+      void $.ui.open({ id: AGENTS_PANE, title: 'Agenci' }).catch(() => undefined)
+    }
+    return started
+  })
+
+  // każdy krok modelu subagenta: kontekst, tokeny i szacunek kosztu
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e)
+    if (e.agentId && result.usage) {
+      const usage = result.usage
+      setState('agents', list => stepAgent(list, e.agentId!, usage, usage.model || e.model, typeof e.effort === 'string' ? e.effort : undefined))
+      $.ui.invalidate('ui.render')
+    }
+    return result
+  })
+
+  // boczny panel agentów i zadań w tle
+  on('ui.render', { component: 'Pane', requestId: AGENTS_PANE }, async ($, e) => {
+    const io = scoped({
+      ...stateOps(() => $.ui.invalidate('ui.render')),
+      now: () => $.clock.now(),
+      sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
+      openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
+      openAgents: () => $.ui.open({ id: AGENTS_PANE, title: 'Agenci' }),
+      toggleAgents: () => toggleAgentsPane($),
+    })
+    return renderAgentsPane(io, $.ui.resolve(e) as El, e.surface, e.props.bodyColumns || 60)
+  })
+
   on('turn.complete', async ($, e, next) => {
+    if (e.agentId) {
+      const at = await $.clock.now()
+      const u = e.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined
+      const tokens = u ? (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) : 0
+      const model = (e.usage as { model?: string } | undefined)?.model ?? ''
+      setState('agents', list => endAgent(list, e.agentId!, e.reason === 'answer' && !e.isAborted, tokens, at, u ? costOf(model, u) : 0))
+      $.ui.invalidate('ui.render')
+    }
     const result = await next(e)
     if (e.agentId === undefined) {
       const at = await $.clock.now()
+      mentor.endWork(at)
       setState('bar', x => ({ ...x, lastRequestAt: at }))
+      // historia paska: zajętość po każdej turze głównej rozmowy, 12 ostatnich, w $.store tej sesji
+      void recordTurnUsage($).catch(() => undefined)
     }
     const io = ensureSession($)
     if (e.agentId === undefined && !e.isAborted) {
       void mentor.onTurnComplete(io, e.answer).catch(err => $.ui.log(`claude-code-mentor: analiza tury: ${String(err)}`, { to: 'debug' }))
     }
     return result
+  })
+
+  on('command.run', { command: 'mentor-tasks' }, async $ => {
+    if ((await $.ui.panes()).some(p => p.id === TASKS_PANE)) {
+      await $.ui.close({ id: TASKS_PANE })
+      return { text: 'Panel zadań w tle zamknięty.' }
+    }
+    await $.ui.open({ id: TASKS_PANE, title: 'Zadania w tle' })
+    return { text: 'Panel zadań w tle otwarty.' }
+  })
+
+  // boczny panel zadań w tle
+  on('ui.render', { component: 'Pane', requestId: TASKS_PANE }, async ($, e) => {
+    const io = scoped({
+      ...stateOps(() => $.ui.invalidate('ui.render')),
+      now: () => $.clock.now(),
+      sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
+      openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
+    })
+    return renderTasksPane(io, $.ui.resolve(e) as El, e.surface, e.props.bodyColumns || 60)
+  })
+
+  on('command.run', { command: 'mentor-files' }, async $ => {
+    void mentor.refreshFiles(ensureSession($))
+    await openFilesPane($)
+    return { text: 'Panel plików otwarty.' }
+  })
+
+  // boczny panel plików (filetree)
+  on('ui.render', { component: 'Pane', requestId: FILES_PANE }, async ($, e) => {
+    const io = scoped({
+      ...stateOps(() => $.ui.invalidate('ui.render')),
+      now: () => $.clock.now(),
+      sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
+      openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
+    })
+    return renderFilesPane(io, $.ui.resolve(e) as El, e.surface, e.props.bodyColumns || 60)
+  })
+
+  on('command.run', { command: 'mentor-agents' }, async $ => {
+    const isOpen = await toggleAgentsPane($)
+    return { text: isOpen ? 'Panel agentów otwarty.' : 'Panel agentów zamknięty.' }
   })
 
   on('command.run', { command: 'mentor' }, async ($, e) => {
@@ -219,6 +454,8 @@ export const register: Register = on => {
       now: () => $.clock.now(),
       sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
       openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
+      openAgents: () => $.ui.open({ id: AGENTS_PANE, title: 'Agenci' }),
+      toggleAgents: () => toggleAgentsPane($),
       selection: () => $.ui.selection(),
       fsRead: path => $.fs.read(path),
     })
@@ -320,6 +557,8 @@ export const register: Register = on => {
       now: () => $.clock.now(),
       sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
       openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
+      openAgents: () => $.ui.open({ id: AGENTS_PANE, title: 'Agenci' }),
+      toggleAgents: () => toggleAgentsPane($),
       fillPrompt: async text => (await $.prompt.fill({ text })).isFilled,
     })
     return renderPane(io, $.ui.resolve(e) as El, e.surface, e.props.bodyColumns)
@@ -332,6 +571,8 @@ export const register: Register = on => {
       now: () => $.clock.now(),
       sleep: ms => $.clock.sleep(ms).then(() => true, () => false),
       openPane: () => $.ui.open({ id: PANE_ID, title: PANE_TITLE }),
+      openAgents: () => $.ui.open({ id: AGENTS_PANE, title: 'Agenci' }),
+      toggleAgents: () => toggleAgentsPane($),
     })
     const E = $.ui.resolve(e) as El
     const settings = await io.get(S.settings)
@@ -349,15 +590,21 @@ export const register: Register = on => {
             now: await $.clock.now(),
             Svg: e.surface === 'desktop' || e.surface === 'vscode' ? $.ui.resolve({ ...e, surface: 'desktop' as const }).Svg : undefined,
             onMentor: () => io.openPane(),
+            history: bar.history,
           })
         : null
+    const crabs = settings.band ? await renderFlowBand(io, E, e.surface, e.props.bodyColumns || 80, e.props.isWorking) : null
     // bez własnej treści Mentor oddaje miejsce temu, co rysuje silnik albo inne pluginy
-    if (!tree && !barTree) return next(e)
+    if (!tree && !barTree && !crabs) return next(e)
+    // z treścią też: to, co narysowały pluginy niżej, zostaje pod paskiem Mentora (nie zastępujemy go)
+    const below = await next(e)
     const { Box } = E
     return (
       <Box flexDirection="column">
+        {crabs}
         {tree}
-        {barTree ?? (await next(e))}
+        {barTree}
+        {below}
       </Box>
     )
   })

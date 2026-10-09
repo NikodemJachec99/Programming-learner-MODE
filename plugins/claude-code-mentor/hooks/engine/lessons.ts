@@ -18,6 +18,8 @@ export type LessonInput = {
   claudeNote: string | null
   settings: MentorSettings
   deep: boolean
+  /** Wskazówki z ocen poprzednich lekcji (za trudne, więcej przykładów...). */
+  prefs?: string[]
 }
 
 const LEVEL_NAMES = ['Nie znam', 'Uczę się', 'Rozumiem częściowo', 'Potrafię zastosować', 'Opanowane']
@@ -190,6 +192,7 @@ export function lessonRequest(i: LessonInput, sendCode: boolean): { system: stri
   ].join('\n')
   const parts: string[] = []
   parts.push(`Główne pojęcie: ${i.concept.name} [${i.concept.id}]. Powiązane w tej zmianie: ${i.related.map(r => r.name).join(', ') || 'brak'}.`)
+  if (i.prefs?.length) parts.push(`Preferencje ucznia (z jego ocen poprzednich lekcji): ${i.prefs.join(' ')}`)
   if (i.missingPrereqs.length) parts.push(`Użytkownikowi brakuje podstaw: ${i.missingPrereqs.map(p => p.name).join(', ')}. Wyjaśnij je krótko tam, gdzie są potrzebne.`)
   parts.push(`Zaobserwowana operacja: narzędzie ${i.obs.tool}, rodzaj ${i.obs.kind}, plik ${i.obs.file ?? '(brak)'}, +${i.obs.added}/−${i.obs.removed} linii${i.obs.symbols.length ? `, nowe nazwy: ${i.obs.symbols.join(', ')}` : ''}.`)
   if (i.obs.preexisting) parts.push('Uwaga: plik miał zmiany sprzed sesji. Mów tylko o pokazanym fragmencie.')

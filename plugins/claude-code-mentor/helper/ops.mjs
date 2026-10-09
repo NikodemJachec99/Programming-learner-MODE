@@ -1236,6 +1236,45 @@ const OPS = {
     return { counts, backup, mode };
   },
 
+  /**
+   * Jednorazowe czyszczenie starych rekordów: zwraca pola tekstowe, które mogły trafić do bazy
+   * przed poprawką redakcji. Reguły redakcji są po stronie pluginu (jedna implementacja).
+   */
+  scrubScan(ctx, args) {
+    const limit = Math.min(optInt(args?.limit, 'limit') ?? 5000, 20000);
+    return {
+      changes: ctx.db.prepare('SELECT id, summary, turn_label, facts_json FROM changes ORDER BY ts DESC LIMIT ?').all(limit)
+        .map((r) => ({ id: r.id, summary: r.summary, turnLabel: r.turn_label, facts: r.facts_json ? JSON.parse(r.facts_json) : null })),
+      observations: ctx.db.prepare('SELECT id, summary FROM observations ORDER BY id DESC LIMIT ?').all(limit)
+        .map((r) => ({ id: Number(r.id), summary: r.summary })),
+    };
+  },
+
+  /** Zapisuje tylko przekazane, już wyczyszczone pola; jedna transakcja. */
+  scrubApply(ctx, args) {
+    const changes = arr(args, 'changes', { max: 20000 });
+    const observations = arr(args, 'observations', { max: 20000 });
+    return withTx(ctx.db, 'IMMEDIATE', () => {
+      const upC = ctx.db.prepare('UPDATE changes SET summary = $summary, turn_label = $turn_label, facts_json = $facts_json WHERE id = $id');
+      const upO = ctx.db.prepare('UPDATE observations SET summary = $summary WHERE id = $id');
+      let n = 0;
+      for (const [i, c] of changes.entries()) {
+        if (!isObj(c)) fail(`changes[${i}] must be an object`);
+        n += Number(upC.run({
+          id: str(c, 'id', { max: 200 }),
+          summary: optStr(pick(c, 'summary'), 'summary', SUMMARY_MAX),
+          turn_label: optStr(pick(c, 'turnLabel'), 'turnLabel', 300),
+          facts_json: toJson(pick(c, 'facts') ?? null, `changes[${i}].facts`),
+        }).changes);
+      }
+      for (const [i, o] of observations.entries()) {
+        if (!isObj(o)) fail(`observations[${i}] must be an object`);
+        n += Number(upO.run({ id: optInt(pick(o, 'id'), 'id'), summary: optStr(pick(o, 'summary'), 'summary', SUMMARY_MAX) }).changes);
+      }
+      return { updated: n };
+    });
+  },
+
   backup(ctx, args) {
     const keep = num(args, 'keep', { def: 10, min: 1, max: 1000, integer: true });
     return doBackup(ctx, keep);

@@ -108,3 +108,67 @@ export function codeLanguage(lang: string): string {
   const map: Record<string, string> = { js: 'javascript', ts: 'typescript', py: 'python', sh: 'bash' }
   return map[lang] ?? lang
 }
+
+/**
+ * Skrócony diff do pierwszego widoku (jak replay-theater): wokół każdej zmiany `ctx` linii
+ * kontekstu, reszta pominięta, najwyżej `cap` linii zmian. Wynik to dalej poprawny unified diff
+ * (nagłówki hunków liczone od nowa), więc rysuje go ten sam element co pełny.
+ */
+export function compactDiff(unified: string, ctx = 1, cap = 14): { text: string; hidden: number; total: number } {
+  type L = { tag: string; text: string; old: number; neu: number }
+  const lines: L[][] = []
+  let cur: L[] | null = null
+  let o = 0
+  let n = 0
+  for (const raw of unified.split('\n')) {
+    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw)
+    if (h) {
+      cur = []
+      lines.push(cur)
+      o = Number(h[1])
+      n = Number(h[2])
+      continue
+    }
+    if (!cur) continue
+    const tag = raw[0]
+    if (tag !== ' ' && tag !== '-' && tag !== '+') continue
+    cur.push({ tag, text: raw.slice(1), old: o, neu: n })
+    if (tag !== '+') o++
+    if (tag !== '-') n++
+  }
+  const total = lines.reduce((s, h) => s + h.filter(l => l.tag !== ' ').length, 0)
+  let shown = 0
+  let hidden = 0
+  const out: string[] = []
+  for (const hunk of lines) {
+    const keep = hunk.map(() => false)
+    hunk.forEach((l, i) => {
+      if (l.tag === ' ') return
+      if (shown >= cap) {
+        hidden++
+        return
+      }
+      shown++
+      for (let j = Math.max(0, i - ctx); j <= Math.min(hunk.length - 1, i + ctx); j++) {
+        // kontekst tak, zmiany obok tylko w limicie
+        if (hunk[j]!.tag === ' ' || j === i) keep[j] = true
+      }
+    })
+    // grupy kolejnych zachowanych linii to nowe hunki
+    let i = 0
+    while (i < hunk.length) {
+      if (!keep[i]) {
+        i++
+        continue
+      }
+      const start = i
+      while (i < hunk.length && keep[i]) i++
+      const part = hunk.slice(start, i)
+      if (!part.some(l => l.tag !== ' ')) continue
+      const oc = part.filter(l => l.tag !== '+').length
+      const nc = part.filter(l => l.tag !== '-').length
+      out.push(`@@ -${part[0]!.old},${oc} +${part[0]!.neu},${nc} @@`, ...part.map(l => l.tag + l.text))
+    }
+  }
+  return { text: out.length ? out.join('\n') + '\n' : '', hidden, total }
+}

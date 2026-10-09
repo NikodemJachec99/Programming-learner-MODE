@@ -730,6 +730,30 @@ test('14. change lab: v1 database upgrades with data intact, changes save, list,
   assert.equal(one(dir, 'getChanges', {}).length, 0);
 });
 
+test('16. history scrub: scan returns old text fields, apply rewrites only given rows, backup op works', (t) => {
+  const dir = tmpDir(t);
+  run(dir, [{ op: 'init' }]);
+  const KEY = 'sk-proj-' + 'A'.repeat(24) + '1111';
+  one(dir, 'saveChange', { change: { id: 'c1', projectId: 'p1', ts: T0, kind: 'edit', file: 'a.ts', summary: `Edycja ${KEY}`, turnLabel: `wstaw ${KEY}`, facts: [`wartość ${KEY} → x`], after: 'const a = 1' } });
+  one(dir, 'saveChange', { change: { id: 'c2', projectId: 'p1', ts: T0 + 1, kind: 'edit', file: 'b.ts', summary: 'czysto', facts: ['nic'], after: 'const b = 2' } });
+  one(dir, 'addObservations', { items: [{ session_id: 's', ts: T0, kind: 'error', tool: 'Bash', summary: `curl -H "Authorization: Bearer ${KEY}"` }] });
+  const scan = one(dir, 'scrubScan', {});
+  assert.equal(scan.changes.length, 2);
+  assert.ok(scan.changes.find((c) => c.id === 'c1').facts[0].includes(KEY));
+  assert.ok(scan.observations[0].summary.includes(KEY));
+  one(dir, 'backup', { keep: 3 });
+  const res = one(dir, 'scrubApply', {
+    changes: [{ id: 'c1', summary: 'Edycja [USUNIĘTO]', turnLabel: 'wstaw [USUNIĘTO]', facts: ['wartość [USUNIĘTO] → x'] }],
+    observations: [{ id: scan.observations[0].id, summary: 'curl -H "Authorization: Bearer [USUNIĘTO]"' }],
+  });
+  assert.equal(res.updated, 2);
+  const c1 = one(dir, 'getChange', { id: 'c1' });
+  assert.ok(!JSON.stringify(c1).includes(KEY), 'no secret left in change');
+  assert.equal(c1.after, 'const a = 1', 'code untouched');
+  assert.deepEqual(one(dir, 'getChange', { id: 'c2' }).facts, ['nic'], 'other rows untouched');
+  assert.ok(!JSON.stringify(one(dir, 'scrubScan', {})).includes(KEY));
+});
+
 function seedRichDataV1(dir) {
   const ctx = openDatabase(dir, { migrations: MIGRATIONS.filter((m) => m.version === 1) });
   try {

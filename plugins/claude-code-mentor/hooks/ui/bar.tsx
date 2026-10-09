@@ -5,6 +5,7 @@
 import type { RenderElement } from 'claude-code'
 import type { Elements } from 'claude-code'
 import type { El } from './kit'
+import { weather } from './visuals'
 
 /** Jedna kategoria z /context. */
 export type BarRow = { name: string; tokens: number; color: string; kind: 'used' | 'free' | 'buffer' }
@@ -23,6 +24,30 @@ export type BarOptions = {
   /** Element Svg na desktopie i w VS Code; w terminalu brak (pasek tekstowy). */
   Svg?: Elements['desktop']['Svg']
   onMentor: () => unknown
+  /** Zajętość kontekstu po ostatnich turach (najstarsza pierwsza), najwyżej 12. */
+  history?: readonly number[]
+}
+
+/** Ile tur pamięta historia paska. */
+export const HISTORY_TURNS = 12
+
+const SPARK = '▁▂▃▄▅▆▇█'
+
+/** Miniwykres zajętości: słupek na turę, wysokość względem największej w oknie (jak token-weather). */
+export function sparkline(history: readonly number[]): string {
+  const xs = history.filter(x => x > 0).slice(-HISTORY_TURNS)
+  if (xs.length < 2) return ''
+  const top = Math.max(...xs)
+  return xs.map(x => SPARK[Math.min(SPARK.length - 1, Math.floor((x / top) * (SPARK.length - 1)))]).join('')
+}
+
+/** Zmiana względem poprzedniej tury: ▲ +12.3k, ▼ −4k albo ▬ 0. */
+export function turnDelta(history: readonly number[]): { text: string; up: boolean } | null {
+  const xs = history.filter(x => x > 0)
+  if (xs.length < 2) return null
+  const d = xs[xs.length - 1]! - xs[xs.length - 2]!
+  if (Math.abs(d) < 50) return { text: '▬ bez zmian', up: false }
+  return { text: `${d > 0 ? '▲ +' : '▼ −'}${formatTokens(Math.abs(d))}`, up: d > 0 }
 }
 
 /**
@@ -164,10 +189,18 @@ export function renderBar(E: El, o: BarOptions): RenderElement {
           : ' · cache wygasł'
     const cacheColor = o.isWorking || leftMs === null ? undefined : leftMs <= 0 ? 'red' : leftMs < 5 * 60_000 ? 'yellow' : 'green'
 
+    // pogoda kontekstu (token-weather): ikona zawsze, słowo gdy jest miejsce
+    const sky = weather(snap.percentage)
+    const skyText = columns >= 90 ? `${sky.icon} ${sky.word} ` : `${sky.icon} `
     const tail = ` ${snap.percentage}% ${formatTokens(snap.totalTokens)}/${formatTokens(snap.maxTokens)}`
     const mentorLabel = 'Mentor'
+    // Wąsko: najpierw znika wykres, potem zmiana tury, na końcu cache. Procent i tokeny zostają zawsze.
+    const spark = columns >= 110 ? sparkline(o.history ?? []) : ''
+    const delta = columns >= 80 ? turnDelta(o.history ?? []) : null
+    const cacheShown = columns >= 60 ? cacheText : ''
+    const extra = (spark ? spark.length + 1 : 0) + (delta ? delta.text.length + 3 : 0)
     // Zapas na odstępy i przycisk; pasek nigdy nie może się zawinąć do drugiej linii.
-    const width = Math.max(10, Math.floor((columns - tail.length - cacheText.length - mentorLabel.length - 10) * 0.9))
+    const width = Math.max(10, Math.floor((columns - tail.length - skyText.length - cacheShown.length - extra - mentorLabel.length - 10) * 0.9))
     const cells = cellsFor(snap.rows, width)
     const fillZone = zoneAt(snap.percentage)
 
@@ -226,6 +259,7 @@ export function renderBar(E: El, o: BarOptions): RenderElement {
         {bar}
         <Box flexShrink={0}>
         <Text wrap="truncate">
+          <Text color={sky.color}>{skyText}</Text>
           {fillZone ? (
             <Text color={fillZone.color} bold>
               {tail.trimStart()}
@@ -233,7 +267,9 @@ export function renderBar(E: El, o: BarOptions): RenderElement {
           ) : (
             <Text dimColor>{tail.trimStart()}</Text>
           )}
-          {cacheColor ? <Text color={cacheColor}>{cacheText}</Text> : <Text dimColor>{cacheText}</Text>}
+          {delta && <Text color={delta.up ? undefined : 'success'} dimColor={delta.up}>{` · ${delta.text}`}</Text>}
+          {spark && <Text color="permission">{` ${spark}`}</Text>}
+          {cacheShown ? cacheColor ? <Text color={cacheColor}>{cacheShown}</Text> : <Text dimColor>{cacheShown}</Text> : null}
         </Text>
         </Box>
         <Button

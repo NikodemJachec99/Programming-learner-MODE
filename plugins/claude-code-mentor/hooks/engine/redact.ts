@@ -35,6 +35,7 @@ const RULES: Rule[] = [
   { name: 'klucz AWS', re: /\b(AKIA|ASIA)[A-Z0-9]{16}\b/g, replace: () => '[USUNIĘTO: klucz AWS]' },
   { name: 'klucz Google', re: /\bAIza[0-9A-Za-z_-]{30,}/g, replace: () => '[USUNIĘTO: klucz Google]' },
   { name: 'JWT', re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, replace: () => '[USUNIĘTO: JWT]' },
+  { name: 'nagłówek autoryzacji', re: /\b(Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{8,}/g, replace: (_m, kind) => `${kind} [USUNIĘTO]` },
   { name: 'hasło w URL', re: /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+):([^\s@/]{2,})@/gi, replace: (_m, pre) => `${pre}:[USUNIĘTO]@` },
   {
     name: 'sekret w przypisaniu',

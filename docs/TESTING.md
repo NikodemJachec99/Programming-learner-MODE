@@ -10,8 +10,8 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 
 | Zestaw | Wynik |
 |---|---|
-| Testy pluginu (Change Lab, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 78 / 78 |
-| Helper bazy (migracje v1 → v2, model opanowania, współbieżność 8 procesów, eksport i import, historia zmian) | 18 / 18 |
+| Testy pluginu (Change Lab, edycje po kolei, pliki i git, laboratorium, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 101 / 101 |
+| Helper bazy (migracje v1 → v2, model opanowania, współbieżność 8 procesów, eksport i import, historia zmian, czyszczenie starej historii) | 19 / 19 |
 | Piaskownica SQL | 5 / 5 |
 | Walidacja marketplace i obu pluginów | ✔ |
 
@@ -50,6 +50,21 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 | Test poziomu | PASS | test: 6/6 poprawnych odpowiedzi zgodnych z tym, co wypisuje symulator. Panel: start, 6 odpowiedzi, wynik 5/6, karta znika |
 | Sekrety w opisie zmiany | PASS | test: klucz API i hasło zmienione w literale nie trafiają do opisu zmiany, listy ani obserwacji, z zapisem kodu i bez. Kontrola: bez poprawki test pada |
 | Uczciwe porównanie A i B | PASS | test: gdy A i B nie mają wspólnej funkcji albo wpisane wywołanie nie istnieje w obu, porównania nie ma, jest komunikat |
+| Zadania w tle | PASS | test: ścieżka wyjścia z wyniku Bash, ogon bez ANSI i z wyciętym tokenem, rzadsze odczyty dużego wyjścia, koniec z powiadomienia i z TaskStop. Panel: skrót w Zmianach z przyciskiem, panel „Zadania w tle” z komendą, wyjście dochodzi po 3 s (wirtualny zegar), „▸ wyjście” rozwija ogon, „■ Zatrzymaj” woła TaskStop i zadanie trafia do Skończone jako zatrzymane |
+| Agenci | PASS | test: start z `agent.spawn`, czynność z narzędzia („edytuje forms/register.ts”), koniec z tokenami, nieudany jako błąd, kostium kraba z roli; krok modelu: kontekst 25% z okna 200k, tokeny, koszt z cennika. Panel: skrót w Zmianach, boczny panel Agenci w terminalu (Pracują, rola i model, Zwiń i Rozwiń) i na desktopie, pasek zadania „Agenci 0/1” z ×1 obok treści innego modu, ✕ chowa tylko pasek zadania. Zwykłe polecenie: „Pracuje · 2 kroki · 1 plik” i czas 0:42 w trakcie, pasmo z animacją wyłączaną przy ograniczonym ruchu, krab inżynier przy edycji, po odpowiedzi „Gotowe · +12 −3”, ✕ chowa do następnego polecenia |
+| Grafika | PASS | test: krab, wiersz agenta, pasek zadania (pigułka, procent, kostium), kafelki, czas z godzinami, pasek z pikseli, shimmer i oś to SVG z `prefers-reduced-motion`; tekst w SVG escapowany; shimmer w terminalu przesuwa się z klatką; pogoda kontekstu. Wygląd sprawdzony w przeglądarce na jasnym i ciemnym tle (statyczny zrzut), nie w panelu Claude |
+| Aktywność plików | PASS | test: odczyt fioletowy, edycja pomarańczowa, po końcu błysk i powrót do neutralnego po 2,7 s (wirtualny zegar), nieudana edycja zostaje błędem i nie liczy się jako zmiana, odrzucona osobno. W Zmianach: karta Teraz, „Claude dotknął” z plakietkami Otwarty, Edytowany, Błąd, plik otwiera zmianę, błąd nie gaśnie |
+| Panel Pliki | PASS | test: jeden `git status` na odświeżenie, gałąź `main` z ↑1, „2 zmienione pliki”, droga do dotkniętego pliku rozwinięta, po commicie Claude plakietka Zacommitowany i „zacommitowane a1c9e42”; status gita z rename i usunięciem, filtr nazw z rodzicami, stany pliku, plakietka JS |
+| Lista zmian | PASS | test: plik edytowany 2 razy to jeden wiersz z ×2 i sumą linii, otwiera ostatnią edycję, nieudana edycja liczona osobno; karta „3 edycje w 2 plikach” z ikoną TS |
+| Edycje po kolei | PASS | test: „2 edycje w 2 plikach”, „Edycje po kolei” z kółkami, „Edycja k z N”, diff z parą linii, `p` i `n` przechodzą między edycjami, przy równym czasie kolejność z listy; diff słów: „what a lot of people like” → „smoother than iced coffee”, linia bez nic wspólnego bez zaznaczeń, przerwa między miejscami, tekst w SVG escapowany |
+| Skrócony diff | PASS | test: 1 linia kontekstu, poprawne nagłówki hunków po skróceniu, limit zmian z licznikiem reszty |
+| Pasek nad promptem z innym modem | PASS | test: treść drugiego renderera AbovePrompt zostaje pod paskiem Mentora |
+| Pasek kontekstu: trend | PASS | test: wykres 12 tur, zmiana względem poprzedniej tury, brak wykresu przy 1 turze |
+| Laboratorium 4 × 6 | PASS | test: 4 wersje na 6 przypadkach liczone raz, 50 przerysowań bez przeliczenia, zmiana kodu albo przypadków liczy od nowa |
+| Karta decyzji | PASS | test: różnice z symulatora oznaczone, propozycja AI jako niesprawdzona, bez laboratorium „nie porównano”, polecenie dopiero po zatwierdzeniu |
+| Informacja zwrotna | PASS | test: jeden głos na lekcję, zmiana głosu przenosi licznik, preferencje trafiają do polecenia lekcji, „za proste” nie zmienia poziomu |
+| Jeden harmonogram animacji | PASS | test: odtwarzanie dochodzi do końca i się kończy, inna zakładka zatrzymuje, bez ruchu pobudka nie tyka |
+| Prywatność historii | PASS | test: token w poleceniu Bash i nagłówku `Authorization` nie trafia do obserwacji, stare opisy czyszczone przy odczycie; helper: scrubScan i scrubApply zmieniają tylko podane rekordy, kod zmian nietknięty |
 | Animacja uruchomienia | PASS | test na wirtualnym zegarze: „Odtwórz” sam przesuwa kursor (po 17 s jest dalej niż na starcie, tempo wolne 8 s na krok), przełącznik tempa wolno, średnio, szybko, pauza trzyma krok mimo upływu 20 s, wznowienie dochodzi do końca i daje „jeszcze raz”. Laboratorium: w trakcie widać „wykonuję linię … krok …”, a „różne wyniki” dopiero po odsłonięciu wszystkich komórek |
 | Przykłady do nauki | PASS | test: każdy z przykładów wykonuje się w całości bez założeń i coś wypisuje (drzewo widgetów osobno). Para `Promise.all` pokazuje start 1, koniec 1, start 2, koniec 2 kontra start 1, start 2, koniec 1, koniec 2, `var`/`let` daje [3, 3, 3] i [0, 1, 2]. Kod z `api.get` i importami nie dostaje „Uruchom”, tylko „Zobacz na przykładzie” |
 | Laboratorium | PASS | test: A/B/C/D na 2 przypadkach, 6/6/7 i „brak `sum`” dla wersji z inną nazwą, oznaczenie różnych wyników, edycja linii, limit 4 wersji, prośba „Sprawdź w projekcie” z przewidywaniem i kodem kopii. Panel: otwarcie w Zmianach, dodanie przypadku, kopia, przejście do kroków. Dart sprawdzony ręcznie: `label(10)` dużo/mało, `async` |

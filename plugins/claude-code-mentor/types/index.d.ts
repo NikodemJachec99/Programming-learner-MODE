@@ -121,7 +121,7 @@ export type MentorLessonBody = {
   taskContext: string | null
 }
 
-export type MentorLessonFollowUp = { kind: 'under' | 'example'; title: string; status: 'loading' | 'ready'; text: string; note?: string }
+export type MentorLessonFollowUp = { kind: 'under' | 'example' | 'simpler'; title: string; status: 'loading' | 'ready'; text: string; note?: string }
 
 export type MentorLesson = MentorLessonMeta & { body: MentorLessonBody; model: string | null; followUps?: MentorLessonFollowUp[] }
 
@@ -270,7 +270,9 @@ export type MentorBench = {
 export type MentorLab = {
   /** Wybrana zmiana albo null (lista). */
   selected: string | null
-  view: 'diff' | 'before' | 'after'
+  view: 'diff' | 'before' | 'after' | 'split'
+  /** Pełny diff zamiast skróconego (zmiany z 1 linią kontekstu). */
+  fullDiff?: boolean
   loading: boolean
   error: string | null
   showAll: boolean
