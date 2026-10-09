@@ -37,6 +37,7 @@
 - [Architektura](#architektura)
 - [Testy](#testy)
 - [FAQ](#faq)
+- [Współtworzenie](#współtworzenie)
 - [In English](#in-english)
 - [Licencja](#licencja)
 
@@ -461,6 +462,10 @@ Tak. Projekt jest na licencji MIT: możesz go używać, kopiować, zmieniać i r
 Tylko przy lekcji AI: nazwa pojęcia, Twój poziom, fragment zmienionego kodu po wycięciu sekretów (do 80 linii, konfigurowalne), diff tej zmiany oraz Twoje polecenie z tej tury. Po wybraniu „nie wysyłaj kodu” idzie wyłącznie opis bez kodu.
 </details>
 
+## Współtworzenie
+
+Pomysły, zgłoszenia błędów i pull requesty są mile widziane. Jak ustawić środowisko, odpalić testy i wysłać PR: [CONTRIBUTING.md](CONTRIBUTING.md). Każdy PR trafia do review właściciela repozytorium i wchodzi do `main` dopiero po akceptacji. Luki bezpieczeństwa zgłaszaj prywatnie: [SECURITY.md](SECURITY.md).
+
 ## In English
 
 **Programming Learner MODE** is a Claude Code mod that turns every coding session into a lesson:
@@ -474,7 +479,7 @@ Tylko przy lekcji AI: nazwa pojęcia, Twój poziom, fragment zmienionego kodu po
   - tracks evidence-based mastery of 89 programming concepts in a local SQLite database, with spaced repetition.
   - draws the context window as a colored bar above the prompt, with per-category tooltips and a prompt-cache countdown.
 
-Works on Windows and macOS (Claude Desktop) and on Linux (Claude Code CLI). The UI and lessons are in Polish. Everything stays on your machine. MIT licensed.
+Works on Windows and macOS (Claude Desktop) and on Linux (Claude Code CLI). The UI and lessons are in Polish. Everything stays on your machine. MIT licensed. Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licencja
 

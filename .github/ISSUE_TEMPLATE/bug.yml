@@ -1,0 +1,51 @@
+name: Błąd
+description: Coś nie działa albo działa źle
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Co się dzieje
+      description: Co zrobiłeś, co się stało, czego się spodziewałeś.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Jak to powtórzyć
+      placeholder: |
+        1. Poproś Claude o zmianę w pliku
+        2. Otwórz Zmiany
+        3. …
+  - type: input
+    id: version
+    attributes:
+      label: Wersja Mentora
+      description: Widać ją w nagłówku panelu, np. 1.4.1.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Gdzie
+      options:
+        - Claude Desktop (zakładka Code)
+        - Claude Code w terminalu
+        - VS Code
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: System
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Zrzut ekranu albo log
+      description: Wynik `scripts/diagnose.ps1` albo `scripts/diagnose.sh` bardzo pomaga. Usuń z niego prywatne ścieżki i kod.
