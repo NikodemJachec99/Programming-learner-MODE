@@ -10,7 +10,7 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 
 | Zestaw | Wynik |
 |---|---|
-| Testy pluginu (Change Lab, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 64 / 64 |
+| Testy pluginu (Change Lab, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 78 / 78 |
 | Helper bazy (migracje v1 → v2, model opanowania, współbieżność 8 procesów, eksport i import, historia zmian) | 18 / 18 |
 | Piaskownica SQL | 5 / 5 |
 | Walidacja marketplace i obu pluginów | ✔ |
@@ -48,6 +48,13 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 | Sprawdź się ze zmiany | PASS | test: pytanie o wynik po zmianie, poprawna odpowiedź policzona z pary przed/po. Bez kodu przed pytania nie ma. Dla Pythona zgadywanie zmiany |
 | Rozpoznawanie przeróbek | PASS | test: `Promise.all`, `map`, `.then` → `await`, `try`, `null`, `var`, Dart `Future.wait`. Zmiana operatora nie jest opisywana jako przeróbka |
 | Test poziomu | PASS | test: 6/6 poprawnych odpowiedzi zgodnych z tym, co wypisuje symulator. Panel: start, 6 odpowiedzi, wynik 5/6, karta znika |
+| Sekrety w opisie zmiany | PASS | test: klucz API i hasło zmienione w literale nie trafiają do opisu zmiany, listy ani obserwacji, z zapisem kodu i bez. Kontrola: bez poprawki test pada |
+| Uczciwe porównanie A i B | PASS | test: gdy A i B nie mają wspólnej funkcji albo wpisane wywołanie nie istnieje w obu, porównania nie ma, jest komunikat |
+| Animacja uruchomienia | PASS | test na wirtualnym zegarze: „Odtwórz” sam przesuwa kursor (po 17 s jest dalej niż na starcie, tempo wolne 8 s na krok), przełącznik tempa wolno, średnio, szybko, pauza trzyma krok mimo upływu 20 s, wznowienie dochodzi do końca i daje „jeszcze raz”. Laboratorium: w trakcie widać „wykonuję linię … krok …”, a „różne wyniki” dopiero po odsłonięciu wszystkich komórek |
+| Przykłady do nauki | PASS | test: każdy z przykładów wykonuje się w całości bez założeń i coś wypisuje (drzewo widgetów osobno). Para `Promise.all` pokazuje start 1, koniec 1, start 2, koniec 2 kontra start 1, start 2, koniec 1, koniec 2, `var`/`let` daje [3, 3, 3] i [0, 1, 2]. Kod z `api.get` i importami nie dostaje „Uruchom”, tylko „Zobacz na przykładzie” |
+| Laboratorium | PASS | test: A/B/C/D na 2 przypadkach, 6/6/7 i „brak `sum`” dla wersji z inną nazwą, oznaczenie różnych wyników, edycja linii, limit 4 wersji, prośba „Sprawdź w projekcie” z przewidywaniem i kodem kopii. Panel: otwarcie w Zmianach, dodanie przypadku, kopia, przejście do kroków. Dart sprawdzony ręcznie: `label(10)` dużo/mało, `async` |
+| Wyrażenia regularne w symulatorze | PASS | test: literały `/…/` z flagami, `replace` z funkcją, `split`, `match`, `test`, `search`, `new RegExp`, `trimEnd`. Dzielenie `(a) / b / 1` i `arr[0] / 2` dalej jest dzieleniem. Laboratorium na kodzie z regexem i `trimEnd` daje wynik zamiast błędu |
+| Pytania bez założeń | PASS | test: pytanie ze zmiany nie powstaje, gdy wynik zależy od zaślepki albo `Math.random` |
 | Ustawienia i Moja wiedza | PASS | test: na wierzchu 3 ustawienia, reszta po „Zaawansowane”. Bez danych brak pustych filtrów poziomów |
 | Aktualizacja bazy v1 → v2 | PASS | test: dane z v1 bez zmian po migracji, kopia przed migracją |
 | Flutter i Dart | PASS | test: wynik symulatora Darta zgodny z Dartem (`~/`, `%`, null safety, Future), drzewo widgetów, pojęcia Fluttera w kodzie ekranu, komendy `flutter` |

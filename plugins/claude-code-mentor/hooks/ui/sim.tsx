@@ -4,55 +4,40 @@
 import type { Host } from '../host'
 import type { RenderElement } from 'claude-code'
 import type { MentorSimState } from '../../types'
-import { mentor } from '../mentor'
+import { SPEED_LABEL, mentor } from '../mentor'
 import { detectConcepts } from '../engine/detect'
-import { BOUNDARY_NOTE, dialectOps, simSites, simulateCached } from './simcache'
+import { BOUNDARY_NOTE, dialectOps, program, simSites, simulateCached } from './simcache'
 import type { Dialect } from './simcache'
 import { isFlutterUi, looksLikeDart, widgetTree } from '../sim/dart'
 import { COND_OPS, LANG_NAMES, boundaryTable, evalCond, parseLiteral, showLit } from '../sim/conditions'
 import type { CondLang } from '../sim/conditions'
 import { explainStep, whyStep } from '../sim/explain'
 import { OP_GROUPS, applyEdits, boundaryNote, compareRuns } from '../sim/variants'
-import { autoCall, looksLikeCall } from '../sim/autocall'
+import { autoCall, looksLikeCall, pairCall } from '../sim/autocall'
+import { EXAMPLES } from '../engine/examples'
 import { card, md, muted, section } from './kit'
 import type { Kit } from './kit'
 import { DEFAULT_SIM, S } from './state'
 import type { SqlRun } from '../store/db'
 
-export const EXAMPLES: { id: string; label: string; source: string; dialect?: Dialect }[] = [
-  { id: 'if', label: 'Warunek if (x < 10)', source: DEFAULT_SIM.source },
-  { id: 'loop', label: 'Pętla for: suma', source: 'let sum = 0\nfor (let i = 0; i < 5; i++) {\n  sum += i\n}\nconsole.log(sum)' },
-  { id: 'fn', label: 'Funkcja: argumenty i return', source: 'function area(width, height) {\n  const result = width * height\n  return result\n}\nconst a = area(3, 4)\nconsole.log("pole:", a)' },
-  { id: 'eq', label: '== vs ===', source: 'const input = "0"\nif (input == 0) {\n  console.log("== mówi: równe")\n}\nif (input === 0) {\n  console.log("=== mówi: równe")\n} else {\n  console.log("=== mówi: różne typy")\n}' },
-  { id: 'async', label: 'async/await i event loop', source: 'console.log("1: start")\nsetTimeout(() => console.log("5: setTimeout"), 0)\nasync function load() {\n  console.log("2: load start")\n  await null\n  console.log("4: po await")\n}\nload()\nconsole.log("3: koniec kodu synchronicznego")' },
-  { id: 'err', label: 'Wyjątek i propagacja', source: 'function parseAge(text) {\n  const n = Number(text)\n  if (Number.isNaN(n)) {\n    throw new Error("To nie liczba: " + text)\n  }\n  return n\n}\ntry {\n  console.log(parseAge("12"))\n  console.log(parseAge("abc"))\n} catch (e) {\n  console.log("Błąd:", e.message)\n}' },
-  { id: 'dart-basics', label: 'Dart: zmienne, ~/ i null safety', dialect: 'dart', source: "void main() {\n  int total = 17;\n  final people = 5;\n  print('każdy dostaje ${total ~/ people}');\n  print('reszta ${total % people}');\n  String? coupon;\n  print(coupon ?? 'brak kuponu');\n  coupon = 'RABAT10';\n  print(coupon.length);\n}" },
-  { id: 'dart-class', label: 'Dart: klasa, fromJson i getter', dialect: 'dart', source: "class Product {\n  final String name;\n  final double price;\n  Product({required this.name, required this.price});\n\n  factory Product.fromJson(Map<String, dynamic> json) {\n    return Product(name: json['name'], price: json['price']);\n  }\n\n  bool get isCheap => price < 10;\n}\n\nvoid main() {\n  final items = [\n    Product.fromJson({'name': 'Kawa', 'price': 12.5}),\n    Product(name: 'Bułka', price: 1.2),\n  ];\n  for (final p in items) {\n    if (p.isCheap) {\n      print('${p.name}: tanio');\n    } else {\n      print('${p.name}: drogo');\n    }\n  }\n}" },
-  { id: 'dart-future', label: 'Dart: Future, await i kolejki', dialect: 'dart', source: "Future<String> fetchUser() async {\n  print('2: pobieram');\n  await Future.delayed(Duration(milliseconds: 300));\n  return 'Ola';\n}\n\nvoid main() async {\n  print('1: start');\n  Future(() => print('4: kolejka zdarzeń'));\n  scheduleMicrotask(() => print('3: mikrozadanie'));\n  final user = await fetchUser();\n  print('5: mam $user');\n}" },
-  { id: 'dart-flutter', label: 'Flutter: drzewo widgetów', dialect: 'dart', source: "class CounterPage extends StatefulWidget {\n  const CounterPage({super.key});\n  @override\n  State<CounterPage> createState() => _CounterPageState();\n}\n\nclass _CounterPageState extends State<CounterPage> {\n  int _count = 0;\n\n  @override\n  Widget build(BuildContext context) {\n    return Scaffold(\n      appBar: AppBar(title: const Text('Licznik')),\n      body: Center(\n        child: Column(\n          mainAxisAlignment: MainAxisAlignment.center,\n          children: [\n            Text('Kliknięcia: $_count'),\n            ElevatedButton(\n              onPressed: () => setState(() => _count++),\n              child: const Text('+1'),\n            ),\n          ],\n        ),\n      ),\n    );\n  }\n}" },
-  { id: 'closure', label: 'Domknięcie (closure)', source: 'function makeCounter() {\n  let count = 0\n  return () => {\n    count++\n    return count\n  }\n}\nconst next = makeCounter()\nnext()\nconsole.log(next())' },
-]
-
 export async function loadSim(io: Host, source: string, origin: string, lang?: string): Promise<void> {
   const isSql = /^\s*(select|with|insert|update|delete)\b/i.test(source)
   const dialect: Dialect = lang === 'dart' || (lang === undefined && looksLikeDart(source)) ? 'dart' : 'js'
-  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, pair: null, source, origin, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
+  await io.set(S.sim, s => (isSql ? { ...s, mode: 'sql' as const, sqlQuery: source.trim(), sqlResult: null } : { ...s, mode: 'js' as const, dialect, pair: null, source, origin, note: undefined, playing: false, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: '' }))
   await io.set(S.tab, () => 'sim' as const)
 }
 
-/** Kod do wykonania: wariant, a do tego wywołanie (wpisane albo dobrane automatycznie). */
-function program(s: MentorSimState, variant: 'A' | 'B'): string {
-  const base = s.pair ? (variant === 'A' ? s.pair.a : s.pair.b) : variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source
-  const call = s.callArgs.trim()
-  if (call && looksLikeCall(call)) return `${base}\n${call}`
-  // jedno wywołanie dla obu wersji, żeby A i B dostały te same dane
-  const ac = autoCall(s.pair ? s.pair.b : base, s.dialect ?? 'js')
-  return ac ? `${base}\n${ac.call}` : base
+
+/** Pasek postępu z bloków, np. ▰▰▰▱▱▱ 12/32. */
+export function progressBar(done: number, total: number, width = 16): string {
+  const n = Math.max(0, Math.min(width, Math.round((done / Math.max(1, total)) * width)))
+  return `${'▰'.repeat(n)}${'▱'.repeat(width - n)}`
 }
 
-function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B', paired: boolean): RenderElement {
+function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B', paired: boolean, playing: boolean, speed: 'slow' | 'normal' | 'fast'): RenderElement {
   const { Box, Button, Text } = k.E
-  const set = (fn: (s: MentorSimState) => MentorSimState) => () => io.set(S.sim, fn)
+  // każdy ręczny ruch zatrzymuje odtwarzanie
+  const set = (fn: (s: MentorSimState) => MentorSimState) => () => (mentor.stopPlay(), io.set(S.sim, s => ({ ...fn(s), playing: false })))
   const clamp = (n: number) => Math.max(0, Math.min(total - 1, n))
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1} alignItems="center">
@@ -62,11 +47,17 @@ function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean
       <Button key="sim-back" onPress={set(s => ({ ...s, cursor: clamp(s.cursor - 1) }))}>
         ◀
       </Button>
-      <Button key="sim-step" variant="primary" onPress={set(s => ({ ...s, cursor: clamp(s.cursor + 1) }))}>
+      <Button key="sim-play" variant="primary" onPress={() => void mentor.playSim(io, total)}>
+        {playing ? '⏸ Pauza' : cursor >= total - 1 && total > 1 ? '↻ Odtwórz jeszcze raz' : '▶ Odtwórz'}
+      </Button>
+      <Button key="sim-step" onPress={set(s => ({ ...s, cursor: clamp(s.cursor + 1) }))}>
         Krok ▶
       </Button>
-      <Button key="sim-run" onPress={set(s => ({ ...s, cursor: total - 1 }))}>
-        Do końca ⏭
+      <Button key="sim-run" plain dimColor onPress={set(s => ({ ...s, cursor: total - 1 }))}>
+        ⏭
+      </Button>
+      <Button key="sim-speed" plain dimColor onPress={() => mentor.cycleSpeed(io)}>
+        {`tempo: ${SPEED_LABEL[speed]}`}
       </Button>
       {hasB && (
         <Button key="sim-compare" onPress={set(s => ({ ...s, panel: s.panel === 'compare' ? 'state' : 'compare' }))}>
@@ -78,7 +69,7 @@ function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean
           {variant === 'A' ? 'pokaż B' : 'pokaż A'}
         </Button>
       )}
-      <Text dimColor>{`${cursor + 1}/${total}`}</Text>
+      <Text color={playing ? 'claude' : undefined} dimColor={!playing}>{`${progressBar(cursor + 1, total, 12)} ${cursor + 1}/${total}`}</Text>
     </Box>
   )
 }
@@ -128,7 +119,8 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
   const seen = new Set(r.steps.slice(0, cursor + 1).map(x => x.line))
   const width = Math.max(20, k.cols - 8)
   const typed = s.callArgs.trim()
-  const auto = autoCall(pair ? pair.b : s.source, dialect)
+  const pc = pair ? pairCall(pair.a, pair.b, dialect, typed) : null
+  const auto = pair ? (pc?.call && !typed ? { label: pc.label! } : null) : autoCall(s.source, dialect)
   const badCall = !!typed && !looksLikeCall(typed)
   const codeLines = (pair ? (variant === 'A' ? pair.a : pair.b) : variant === 'B' && s.edits.length ? applyEdits(s.source, s.edits) : s.source).split('\n').length
 
@@ -153,11 +145,19 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
   if (r.error?.kind === 'syntax') {
     panel = card(k, 'error', <Text color="error" wrap="wrap">{`Nie umiem wykonać tego kodu: ${r.error.message}${r.error.line ? ` (linia ${r.error.line})` : ''}`}</Text>, muted(k, dialect === 'dart' ? 'Obsługiwany podzbiór Darta: zmienne, null safety, if/switch, pętle, funkcje, klasy, wyjątki, kolekcje, Future, async/await. Bez Fluttera, Streamów i kaskad (..).' : 'Obsługiwany podzbiór JS/TS: zmienne, operatory, if/switch, pętle, funkcje, klasy, wyjątki, tablice, obiekty, Map/Set, Promise, async/await, setTimeout.'))
   } else if (step) {
-    if (s.panel === 'compare' && (pair || s.edits.length)) {
+    if (s.panel === 'compare' && pc?.problem) {
+      panel = card(k, 'warning', <Text bold>Tego porównania nie da się zrobić uczciwie</Text>, <Text wrap="wrap">{pc.problem}</Text>)
+    } else if (s.panel === 'compare' && (pair || s.edits.length)) {
       const a = simulateCached(program(s, 'A'), dialect)
       const b = simulateCached(program(s, 'B'), dialect)
       const cmp = compareRuns(a, b, pair ? [] : s.edits.map(e => ({ before: e.before, after: e.text, line: e.line })))
-      panel = card(k, 'warning', <Text bold>{pair ? `A (${pair.aLabel}) i B (${pair.bLabel}) na tych samych danych` : 'A (oryginał) i B (zmieniony)'}</Text>, ...cmp.lines.map(t => md(k, t)))
+      panel = card(
+        k,
+        'warning',
+        <Text bold>{pair ? `A (${pair.aLabel}) i B (${pair.bLabel}) na tych samych danych` : 'A (oryginał) i B (zmieniony)'}</Text>,
+        ...cmp.lines.map(t => md(k, t)),
+        (a.assumed || b.assumed) && <Text color="warning" wrap="wrap">Część wyniku opiera się na założeniach symulatora (zaślepki, sieć, losowość albo zegar). Różnica może nie wystąpić w prawdziwym programie.</Text>,
+      )
     } else {
       const vars = Object.entries(step.vars).filter(([, v]) => !v.startsWith('[Function') && !v.startsWith('[class') && !v.startsWith('‹'))
       const why = whyStep(step, r).replace(/^Dlaczego ten krok: /, '')
@@ -193,6 +193,7 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
   return (
     <Box flexDirection="column">
       <Text dimColor wrap="truncate-end">{`${s.origin} · tylko w pamięci, pliki bez zmian`}</Text>
+      {s.note && <Text color="suggestion" wrap="wrap">{s.note}</Text>}
       {pair && (
         <Box flexDirection="row" columnGap={1}>
           <Button key="pair-a" variant={variant === 'A' ? 'primary' : undefined} plain={variant === 'A' ? undefined : true} dimColor={variant !== 'A'} onPress={() => io.set(S.sim, x => ({ ...x, variant: 'A' as const, cursor: 0 }))}>
@@ -208,9 +209,10 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
       )}
       {codeView}
       {!typed && auto && <Text dimColor wrap="wrap">{`Uruchamiam ${auto.label} z przykładowymi danymi. Wpisz własne wywołanie, żeby sprawdzić inne.`}</Text>}
+      {pc?.problem && <Text color="warning" wrap="wrap">{pc.problem}</Text>}
       {badCall && <Text color="warning" wrap="wrap">{`„${typed}” to nie jest wywołanie funkcji${auto ? `, więc uruchamiam ${auto.label}. Wpisz np. ${auto.label}` : '. Wpisz np. nazwa(1, 2)'}.`}</Text>}
       <Input key="sim-call" label={pair ? 'Wywołanie (A i B):' : 'Wywołanie:'} placeholder={auto ? auto.label : pair?.hint ? pair.hint : 'np. add(2, 3)'} value={s.callArgs} submitLabel="uruchom" onSubmit={value => io.set(S.sim, x => ({ ...x, callArgs: value, cursor: 0 }))} />
-      {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair)}
+      {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair, !!s.playing, s.speed ?? 'slow')}
       {panel}
       {r.error && r.error.kind !== 'syntax' && <Text color="error" wrap="wrap">{r.error.message}</Text>}
       {r.hypotheses.length > 0 && card(k, 'warning', <Text color="warning">Założenia symulatora</Text>, ...r.hypotheses.map((x, i) => <Text key={`hy-${i}`} dimColor wrap="wrap">{`• ${x}`}</Text>))}
@@ -384,7 +386,7 @@ export async function renderSim(io: Host, k: Kit): Promise<RenderElement> {
           options={[{ value: '', label: '(wybierz albo użyj /mentor sim)' }, ...EXAMPLES.map(e => ({ value: e.id, label: e.label }))]}
           onSelect={v => {
             const ex = EXAMPLES.find(e => e.id === v)
-            if (ex) return loadSim(io, ex.source, `przykład: ${ex.label}`, ex.dialect ?? 'js')
+            if (ex) return mentor.showExample(io, ex)
           }}
         />
       )}

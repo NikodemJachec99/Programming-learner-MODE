@@ -6,6 +6,7 @@ import { card, code, md, muted, section } from './kit'
 import type { Kit } from './kit'
 import { S } from './state'
 import { loadSim } from './sim'
+import { runnable } from '../engine/runnable'
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E']
 
@@ -111,7 +112,7 @@ export async function renderPractice(io: Host, k: Kit): Promise<RenderElement> {
             <Button key="q-next" variant="primary" onPress={() => mentor.startQuiz(io, 'concept', q.conceptId)}>
               Kolejne pytanie
             </Button>
-            {q.code && (q.codeLang === 'typescript' || q.codeLang === 'javascript') && (
+            {q.code && (q.codeLang === 'typescript' || q.codeLang === 'javascript') && runnable(q.code, 'js') && (
               <Button key="q-sim" onPress={() => loadSim(io, q.code!, 'kod z ćwiczenia')}>
                 Sprawdź w Symulatorze
               </Button>

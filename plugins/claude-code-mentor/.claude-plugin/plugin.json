@@ -1,6 +1,6 @@
 {
   "name": "claude-code-mentor",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Osobisty nauczyciel programowania w Claude Code: lekcje z prawdziwych zmian w Twoim kodzie (JS/TS, Python, PHP, SQL, Dart i Flutter), symulator wykonania krok po kroku, ćwiczenia i trwały model wiedzy w lokalnym SQLite.",
   "author": {
     "name": "Nikodem Jachec",

@@ -13,6 +13,11 @@ const SENSITIVE_FILE = [
   /(^|[\\/])wp-config\.php$/i,
 ]
 
+/** Dodane i usunięte linie po redakcji: z nich powstaje opis zmiany, który trafia do bazy i panelu. */
+export function redactLines<T extends { addedLines: { line: number; text: string }[]; removedLines: string[] }>(f: T): T {
+  return { ...f, addedLines: f.addedLines.map(l => ({ ...l, text: redact(l.text).text })), removedLines: f.removedLines.map(t => redact(t).text) }
+}
+
 export function isSensitivePath(path: string | null | undefined): boolean {
   if (!path) return false
   return SENSITIVE_FILE.some(re => re.test(path))

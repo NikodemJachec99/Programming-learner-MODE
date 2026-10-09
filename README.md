@@ -7,7 +7,7 @@
   <a href="#wymagania"><img alt="Windows i macOS" src="https://img.shields.io/badge/Windows%20%7C%20macOS-0078d4?style=flat-square"></a>
   <a href="#flutter-i-dart"><img alt="Flutter i Dart" src="https://img.shields.io/badge/Flutter%20%26%20Dart-02569B?style=flat-square&logo=flutter&logoColor=white"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-80%20%2F%2080-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-101%20%2F%20101-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licencja-MIT-6b7280?style=flat-square"></a>
 </p>
@@ -89,10 +89,16 @@ Pierwsza zakładka panelu. Odpowiada na pytanie: co Claude właśnie zmienił i 
 1. **Lista zmian** pogrupowana po Twoich poleceniach („dodaj walidację emaila”), z plikiem, liczbą linii i tym, co warto zrozumieć. Podstawy (zmienne, funkcje, pętle) i pojęcia już opanowane nie są wypisywane. Historia zostaje między sesjami.
 2. **Jedno kliknięcie** otwiera zmianę: krótko co się zmieniło, a pod spodem przełącznik **Zmiany / Przed / Po**. Opis rozpoznaje typowe przeróbki: pętla z `await` → `Promise.all`, pętla z `push` → `map`/`filter`, `.then` → `await`, dodany `try`/`catch`, sprawdzenie `null`, `throw`, typy, test.
 3. **Wyjaśnij** pokazuje lekcję o tej zmianie na miejscu, pod kodem, bez przeskakiwania do innej zakładki. Pod lekcją dwa dopytania: „Co jest pod spodem” i „Inny przykład”.
-4. **▶ Uruchom przed i po** ładuje obie wersje do symulatora z tymi samymi danymi. Gdy Claude zmienił `if (x < 10)` na `if (x <= 10)`, Mentor sam podstawia wartość z diffu (`label(10)`), czyli dokładnie przypadek brzegowy. „Porównaj A i B” pokazuje różnicę wprost: „w A `x < 10` → false, w B `x <= 10` → true; A wypisało „dużo”, B wypisało „mało””.
-5. **Sprawdź się** zadaje pytanie z tej konkretnej zmiany: te same dane idą przez kod przed i po, a Ty przewidujesz wynik wersji po. Odpowiedź liczy symulator, nie model. Gdy kodu nie da się uruchomić (np. Python), zamiast tego jest **zgadywanie zmiany**: widzisz kod przed i swoje polecenie, bierzesz podpowiedź (gdzie i co, bez rozwiązania), a potem odsłaniasz prawdziwą zmianę.
-6. **Inne podejście** prosi model o 1 albo 2 naprawdę inne rozwiązania tego samego problemu, z zaletami, wadami i tym, kiedy je wybrać. Każde można porównać z obecnym w symulatorze.
-7. **Poproś Claude o to** wstawia gotową prośbę do pola wiadomości. Kod się nie zmienia, dopóki sam jej nie wyślesz Enterem, a zmiana przechodzi przez zwykłe narzędzia i uprawnienia Claude.
+4. **Zobacz na przykładzie** ładuje do Symulatora krótki, czysty przykład tego samego mechanizmu, a nie wycinek Twojego programu. Gdy Claude zamienił pętlę z `await` na `Promise.all`, przykład ma te same dwie wersje w 10 liniach i widać, że w B oba pobrania startują od razu. Rozpoznane przeróbki mają własne pary A/B, a pozostałe pojęcia (domknięcia, `?.` i `??`, klasy, Future w Darcie, drzewo widgetów Fluttera i inne) jeden przykład. Każdy przykład wykonuje się w całości, sprawdza to test.
+5. **▶ Uruchom i porównaj** pojawia się tylko wtedy, gdy Twój kod da się uczciwie wykonać: bez importów i nazw spoza fragmentu, bez dopisków symulatora i bez założeń o sieci, losowości czy zegarze. Mała czysta funkcja przechodzi, kod zależny od reszty projektu dostaje przykład. Uruchomienie otwiera laboratorium na miejscu, pod kodem zmiany. Wersja A to kod przed, B to kod po, a każdy przypadek (np. `label(10)`) idzie przez wszystkie wersje naraz. Gdy Claude zmienił `if (x < 10)` na `if (x <= 10)`, Mentor sam dodaje przypadek z wartością z diffu, czyli dokładnie przypadek brzegowy, i oznacza wiersz „różne wyniki”: A wypisało „dużo”, B „mało”.
+   - **Własne przypadki** wpisujesz jako wywołanie, do 6 naraz.
+   - **＋ kopia** robi wersję C albo D do edycji linia po linii. Kod z narzędzia zostaje nietknięty.
+   - Wersja, w której nie ma wołanej funkcji, dostaje „brak funkcji”, a nie fałszywy wynik. Wynik oparty na założeniu symulatora ma znak ≈.
+   - **Krok po kroku** otwiera wybraną wersję w pełnym symulatorze.
+   - **Sprawdź w projekcie** wstawia do pola wiadomości prośbę, żeby Claude uruchomił prawdziwe testy z tymi przypadkami i pokazał je obok przewidywania. Mentor sam niczego z projektu nie uruchamia.
+6. **Sprawdź się** zadaje pytanie z tej konkretnej zmiany: te same dane idą przez kod przed i po, a Ty przewidujesz wynik wersji po. Odpowiedź liczy symulator, nie model, i tylko wtedy, gdy kod wykonuje się czysto. Gdy się nie da, zamiast tego jest **zgadywanie zmiany**: widzisz kod przed i swoje polecenie, bierzesz podpowiedź (gdzie i co, bez rozwiązania), a potem odsłaniasz prawdziwą zmianę.
+7. **Inne podejście** prosi model o 1 albo 2 naprawdę inne rozwiązania tego samego problemu, z zaletami, wadami i tym, kiedy je wybrać. Każde można dodać do laboratorium jako kolejną wersję i puścić na tych samych przypadkach.
+8. **Poproś Claude o to** wstawia gotową prośbę do pola wiadomości. Kod się nie zmienia, dopóki sam jej nie wyślesz Enterem, a zmiana przechodzi przez zwykłe narzędzia i uprawnienia Claude.
 
 Skąd „przed”: Edit i Write zwracają treść pliku sprzed zmiany i dokładny patch. Mentor bierze „przed” z tej treści, a „po” liczy, nakładając na nią ten patch. Niczego nie odtwarza ani nie zgaduje. Gdy narzędzie nie odda poprzedniej wersji (np. bardzo duży plik), widok „Przed” jest oznaczony jako niedostępny. Nieudane i odrzucone edycje są na liście jako nieudane, bez kodu. Pliki wrażliwe tylko jako wpis bez treści.
 
@@ -185,7 +191,7 @@ bash scripts/uninstall.sh --delete-data       # z usunięciem danych (najpierw e
 bash scripts/diagnose.sh                      # diagnostyka, niczego nie zmienia
 ```
 
-Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.3.0”).
+Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.4.0”).
 
 Pracujesz nad kodem Mentora? Po każdej zmianie wystarczy `node scripts/update-local.mjs`: przepisuje wersję z `plugin.json` do kodu i marketplace, aktualizuje instalację i wgrywa nowy kod do cache, więc w otwartej sesji działa już `/reload-plugins`.
 
@@ -258,7 +264,8 @@ Deterministyczny interpreter podzbioru JavaScript i TypeScript, napisany od zera
 
 | Funkcja | Opis |
 |---|---|
-| `↺` `◀` `Krok ▶` `Do końca ⏭` | przejście po krokach w obie strony |
+| `▶ Odtwórz` | kod wykonuje się sam, krok po kroku: podświetlona linia, zmienne i wyjście zmieniają się na oczach, pasek postępu pokazuje, ile zostało. Domyślnie wolno, 8 s na krok, przełącznik „tempo” daje średnio (4 s) i szybko (1,8 s). `⏸ Pauza` w każdej chwili. Przykład z „Zobacz na przykładzie” odtwarza się od razu |
+| `↺` `◀` `Krok ▶` `⏭` | ręczne przejście po krokach w obie strony |
 | Karta kroku | linia, „dlaczego teraz”, zmienne, stos, kolejki i wyjście w jednym miejscu, „więcej o tym kroku” na życzenie |
 | Przykładowe dane | kod, który tylko definiuje funkcje, dostaje wywołanie z danymi dobranymi z typów i nazw parametrów (np. `loadOrders(["1", "2"])`). Własne wywołanie wpisujesz obok |
 | Zmienne i stos | wartości przed i po, zmienione zmienne podświetlone, ramki wywołań z argumentami |
@@ -394,7 +401,7 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 57 / 57 |
+| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 78 / 78 |
 | `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian | 18 / 18 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |
@@ -404,7 +411,7 @@ claude plugin test plugins\claude-code-mentor
 node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 ```
 
-CI uruchamia testy helpera na Windows, macOS i Linuxie oraz sprawdza skrypty `.sh`. Test ręczny zmiany konta Claude i restartu aplikacji jest opisany w [docs/TESTING.md](docs/TESTING.md).
+CI uruchamia testy pluginu i walidację marketplace, testy helpera na Windows, macOS i Linuxie oraz sprawdza skrypty `.sh`. Test ręczny zmiany konta Claude i restartu aplikacji jest opisany w [docs/TESTING.md](docs/TESTING.md).
 
 ## FAQ
 

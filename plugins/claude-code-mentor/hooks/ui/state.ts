@@ -65,7 +65,7 @@ export const DEFAULT_SIM: MentorSimState = {
   pair: null,
 }
 
-export const DEFAULT_LAB: MentorLab = { selected: null, view: 'diff', loading: false, error: null, showAll: false, alt: { status: 'idle', forId: null, items: [], message: '' }, confirm: null, handed: null, guess: null }
+export const DEFAULT_LAB: MentorLab = { selected: null, view: 'diff', loading: false, error: null, showAll: false, alt: { status: 'idle', forId: null, items: [], message: '' }, confirm: null, handed: null, guess: null, bench: null }
 
 export const DEFAULT_BOOT: MentorBoot = { status: 'starting', messages: [], dataDir: '', node: '', sessionId: '', project: null, engine: '', schemaVersion: 0, pending: 0 }
 

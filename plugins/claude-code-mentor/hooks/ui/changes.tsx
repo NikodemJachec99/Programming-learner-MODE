@@ -6,13 +6,16 @@ import type { RenderElement } from 'claude-code'
 import type { Host } from '../host'
 import type { MentorLab } from '../../types'
 import { conceptById, interestingConcepts, mentor } from '../mentor'
-import { changeHints, groupByTurn, simDialect } from '../engine/change'
+import { changeHints, groupByTurn, refactorIds, simDialect } from '../engine/change'
 import type { ChangeFull, ChangeMeta } from '../engine/change'
 import { codeLanguage } from '../engine/diff'
 import { ago, card, code, label, md, muted, shortPath } from './kit'
 import type { Kit } from './kit'
 import { S } from './state'
 import { lessonBlock } from './lesson'
+import { renderBench } from './bench'
+import { exampleFor } from '../engine/examples'
+import { pairRunnable, runnable } from '../engine/runnable'
 import { PLACEMENT, placementSummary } from '../engine/placement'
 
 const FIRST_GROUPS = 6
@@ -203,7 +206,8 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
   const lang = codeLanguage(m.lang)
   const kindLabel = m.status === 'failed' ? 'nieudana' : m.status === 'blocked' ? 'plik wrażliwy' : m.kind === 'create' ? 'nowy plik' : m.kind === 'config' ? 'konfiguracja' : 'edycja'
   const sim = simDialect(m.lang)
-  const canRun = !!c?.after && !!sim
+  // prawdziwy kod tylko wtedy, gdy wykona się bez błędu składni, dopisków i założeń
+  const canRun = !!c?.after && !!sim && (c.before ? pairRunnable(c.before, c.after, sim) : runnable(c.after, sim))
   const view = lab.view === 'before' && !c?.before ? 'diff' : lab.view
 
   const header = (
@@ -292,6 +296,10 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
   const levels = Object.fromEntries((await io.get(S.knowledge)).map(r => [r.id, r.level]))
   const concepts = conceptNames(interestingConcepts(m.concepts, levels), 3)
   const explaining = lab.lessonFor === id
+  const benchOpen = lab.bench?.forId === id && canRun
+  const example = c?.after
+    ? exampleFor(refactorIds((c.before ?? '').split('\n'), c.after.split('\n'), m.lang), [...interestingConcepts(m.concepts, levels, true), ...m.concepts], sim)
+    : null
   const job = await io.get(S.job)
   const lesson = await io.get(S.lesson)
   const view2 = await io.get(S.view)
@@ -314,8 +322,13 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
         </Button>
       )}
       {canRun && (
-        <Button key="lab-run" onPress={() => mentor.runChange(io, id)}>
-          {c?.before ? '▶ Uruchom przed i po' : '▶ Uruchom'}
+        <Button key="lab-run" variant={benchOpen ? 'primary' : undefined} onPress={() => mentor.openBench(io, id)}>
+          {benchOpen ? 'Zamknij laboratorium' : c?.before ? '▶ Uruchom i porównaj' : '▶ Uruchom'}
+        </Button>
+      )}
+      {example && (
+        <Button key="lab-example" onPress={() => mentor.showExample(io, example)}>
+          Zobacz na przykładzie
         </Button>
       )}
       {(canGuess || canRun || m.concepts.length > 0) && !!c && (
@@ -345,8 +358,9 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
       {provenance ? muted(k, provenance) : null}
       {beforeNote ? muted(k, beforeNote) : null}
       {actions}
+      {benchOpen && sim && lab.bench && <Box marginTop={1}>{renderBench(io, k, lab.bench, m.file, m.lang, sim)}</Box>}
       {lessonView}
-      {!sim && muted(k, 'Symulator wykonuje JS, TS i Darta. Tu zostaje porównanie kodu.')}
+      {!canRun && example && muted(k, `Ten kod zależy od reszty projektu, więc nie uruchamiam go w symulatorze. „Zobacz na przykładzie” pokazuje sam mechanizm: ${example.label}.`)}
       {renderAlternatives(io, k, lab, id, m.lang)}
     </Box>
   )
@@ -392,8 +406,8 @@ function renderAlternatives(io: Host, k: Kit, lab: MentorLab, id: string, langId
           ) : (
             <Box flexDirection="row" columnGap={1}>
               {sim && (
-                <Button key={`alt-${i}-sim`} plain onPress={() => mentor.compareAlternative(io, id, i)}>
-                  Porównaj w symulatorze
+                <Button key={`alt-${i}-sim`} plain onPress={() => mentor.benchAddAlt(io, id, i)}>
+                  Dodaj do laboratorium
                 </Button>
               )}
               <Button key={`alt-${i}-pick`} plain onPress={() => io.set(S.lab, l => ({ ...l, confirm: i, handed: null }))}>

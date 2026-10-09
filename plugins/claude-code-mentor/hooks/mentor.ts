@@ -6,6 +6,7 @@
 import type { Host } from './host'
 import type {
   MentorAlternative,
+  MentorBenchVariant,
   MentorKnowledgeRow,
   MentorLesson,
   MentorLessonBody,
@@ -30,9 +31,13 @@ import { builtinLesson, extractJson, lessonRequest, levelName, mergeModelLesson 
 import type { LessonInput } from './engine/lessons'
 import { changeQuestion } from './engine/changequiz'
 import { PLACEMENT } from './engine/placement'
+import { caseStatement, nextVariantId } from './engine/bench'
+import type { Example } from './engine/examples'
+import { pairCall } from './sim/autocall'
+import { simTotal } from './ui/simcache'
 import { boundaryQuestion, fromTemplate, gradeChoice, gradeRequest, parseGrade, parseQuiz, predictOutputQuestion, quizRequest } from './engine/quiz'
 import type { Built, Grade } from './engine/quiz'
-import { isSensitivePath, redact, safeSnippet } from './engine/redact'
+import { isSensitivePath, redact, redactLines, safeSnippet } from './engine/redact'
 import { batch, DbError, flushPending, joinPath, one, pendingCount, runSql, write } from './store/db'
 import type { DbCtx, Op } from './store/db'
 import { DEFAULT_SETTINGS, S } from './ui/state'
@@ -48,12 +53,13 @@ export const conceptById = (id: string): ConceptDef | undefined => BY_ID.get(id)
 
 /**
  * Pojęcia warte uwagi w zmianie: bez podstaw i bez tego, co już opanowane (poziom 3+),
- * najbardziej zaawansowane najpierw. Gdy nic nie zostaje, oddaje pierwsze z listy.
+ * najbardziej zaawansowane najpierw. Gdy nic nie zostaje: pusta lista do pokazania w panelu,
+ * a z `fallback` pierwsze pojęcie z listy (lekcja i ćwiczenie muszą mieć o czym być).
  */
-export function interestingConcepts(ids: readonly string[], levels: Record<string, number>): string[] {
+export function interestingConcepts(ids: readonly string[], levels: Record<string, number>, fallback = false): string[] {
   const known = [...new Set(ids)].filter(id => BY_ID.has(id))
   const picked = known.filter(id => !BASIC_CONCEPTS.has(id) && (levels[id] ?? 0) < 3).sort((a, b) => (DEPTH.get(b) ?? 0) - (DEPTH.get(a) ?? 0))
-  return picked.length ? picked : known.slice(0, 1)
+  return picked.length || !fallback ? picked : known.slice(0, 1)
 }
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -93,6 +99,10 @@ export function suggestCall(code: string, unified: string, dialect: 'js' | 'dart
   if (params === 0) return { call: `${print}(${name}())`, hint: `${name}()` }
   return { call: '', hint: `${name}(…)` }
 }
+
+/** Pauza między krokami odtwarzania w Symulatorze. */
+export const SPEED_MS = { slow: 8000, normal: 4000, fast: 1800 } as const
+export const SPEED_LABEL = { slow: 'wolno', normal: 'średnio', fast: 'szybko' } as const
 
 export class Mentor {
   ctx: DbCtx | null = null
@@ -353,6 +363,8 @@ export class Mentor {
       return { ...base, kind, blocked: true, added: facts?.added ?? 0, removed: facts?.removed ?? 0, summary: 'Plik wrażliwy: treść nie jest analizowana ani zapisywana' }
     }
     if (!facts) return { ...base, kind, summary: 'Zmiana bez szczegółów diffu' }
+    // wszystko, co dalej powstaje z linii (opis zmiany, nazwy, pojęcia), widzi już tekst bez sekretów
+    facts = redactLines(facts)
     const hits = detectConcepts(base.lang, facts.addedLines, path)
     const symbols = newSymbols(facts.addedLines)
     let summary = ''
@@ -420,7 +432,7 @@ export class Mentor {
       id: makeId('c', now), ts: now, turnKey: `${this.sessionId}:${this.turn}`, turnLabel: this.turnLabel, tool,
       kind: o.kind === 'create' ? 'create' : o.kind === 'config' ? 'config' : o.kind === 'dependency' ? 'dependency' : 'edit',
       status: 'ok', file: o.file ?? '', lang: o.lang, line: o.line, added: o.added, removed: o.removed, summary: o.summary,
-      concepts: o.concepts, facts: describeChange(facts.removedLines, facts.addedLines, o.lang, shortName, isCreate),
+      concepts: o.concepts, facts: describeChange(facts.removedLines, facts.addedLines, o.lang, shortName, isCreate).map(f => redact(f).text),
       hasBefore: keep && !!before, hasAfter: keep && !!after,
       unified: keep ? unified : '', before: keep && before ? redact(before.text).text : null, beforeStart: before?.start ?? 1,
       after: keep && after ? redact(after.text).text : null, afterStart: after?.start ?? 1,
@@ -462,14 +474,113 @@ export class Mentor {
     }
   }
 
-  /** Symulacja przed (A) i po (B) na tych samych danych. Nic nie zapisuje do plików. */
-  async runChange(io: Host, id: string): Promise<void> {
+  /**
+   * Laboratorium w szczegółach zmiany: A = przed, B = po, przypadki dobrane z diffu.
+   * Drugie kliknięcie zamyka. Nic nie trafia do plików.
+   */
+  async openBench(io: Host, id: string): Promise<void> {
     const c = this.changeCache.get(id)
     if (!c?.after) return
+    if ((await io.get(S.lab)).bench?.forId === id) return void (await io.set(S.lab, l => ({ ...l, bench: null })))
     const dialect = simDialect(c.lang) ?? 'js'
-    const call = suggestCall(c.after, c.unified, dialect)
-    const pair = c.before ? { a: c.before, b: c.after, aStart: c.beforeStart, bStart: c.afterStart, aLabel: 'przed', bLabel: 'po', hint: call.hint } : null
-    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: c.after!, origin: `${c.file}${c.line ? `:${c.line}` : ''}`, pair, edits: [], cursor: 0, variant: (pair ? 'B' : 'A') as 'A' | 'B', panel: 'state' as const, callArgs: call.call }))
+    const variants: MentorBenchVariant[] = [
+      ...(c.before ? [{ id: 'A', label: 'przed', code: c.before, origin: 'before' as const }] : []),
+      { id: c.before ? 'B' : 'A', label: c.before ? 'po' : 'nowy kod', code: c.after, origin: 'after' as const },
+    ]
+    // przypadek z diffu (np. wartość z warunku) i wspólne wywołanie z przykładowymi danymi
+    const fromDiff = suggestCall(c.after, c.unified, dialect)
+    const shared = c.before ? pairCall(c.before, c.after, dialect) : null
+    const cases = [...new Set([fromDiff.call ? fromDiff.hint : '', shared?.call ? shared.label ?? '' : ''].filter(Boolean))].slice(0, 3)
+    await io.set(S.lab, l => ({ ...l, bench: { forId: id, variants, cases, sel: variants[variants.length - 1]!.id, line: 1, error: null, handed: null, reveal: cases.length ? 0 : undefined, frame: 0 } }))
+    if (cases.length) void this.animateBench(io, cases.length * variants.length)
+  }
+
+  private animToken = 0
+
+  /** Zmiana tempa działa od następnego kroku, także w trakcie odtwarzania. */
+  async cycleSpeed(io: Host): Promise<void> {
+    await io.set(S.sim, s => ({ ...s, speed: s.speed === 'fast' ? ('slow' as const) : s.speed === 'normal' ? ('fast' as const) : ('normal' as const) }))
+  }
+
+  /**
+   * Animacja uruchomienia laboratorium: komórki wyniku odsłaniają się po kolei, a liczona
+   * pokazuje, którą linię właśnie wykonuje. Nowe uruchomienie albo zamknięcie przerywa starą.
+   */
+  async animateBench(io: Host, cells: number, frames = 5): Promise<void> {
+    const token = ++this.animToken
+    const alive = async () => token === this.animToken && !!(await io.get(S.lab)).bench
+    for (let idx = 0; idx < cells; idx++) {
+      for (let f = 0; f < frames; f++) {
+        if (!(await alive())) return
+        await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: idx, frame: f } } : l))
+        if (!(await io.sleep(800))) return
+      }
+    }
+    if (await alive()) await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: undefined, frame: undefined } } : l))
+  }
+
+  /**
+   * Odtwarzanie w Symulatorze: kursor idzie sam, krok po kroku. Tempo stałe na krok, żeby dało się
+   * śledzić linię, zmienne i wyjście: wolno 8 s, średnio 4 s, szybko 1,8 s.
+   */
+  async playSim(io: Host, total?: number): Promise<void> {
+    const sim = await io.get(S.sim)
+    if (sim.playing) return void (await io.set(S.sim, s => ({ ...s, playing: false })))
+    total ??= simTotal(sim)
+    const token = ++this.animToken
+    await io.set(S.sim, s => ({ ...s, playing: true, cursor: s.cursor >= total - 1 ? 0 : s.cursor }))
+    while (token === this.animToken) {
+      const s = await io.get(S.sim)
+      if (!s.playing) return
+      if (s.cursor >= total - 1) break
+      if (!(await io.sleep(SPEED_MS[(await io.get(S.sim)).speed ?? 'slow']))) return
+      if (token !== this.animToken || !(await io.get(S.sim)).playing) return
+      await io.set(S.sim, x => ({ ...x, cursor: Math.min(total - 1, x.cursor + 1) }))
+    }
+    if (token === this.animToken) await io.set(S.sim, s => ({ ...s, playing: false }))
+  }
+
+  /** Zatrzymuje odtwarzanie (każdy ręczny ruch kursora). */
+  stopPlay(): void {
+    this.animToken++
+  }
+
+  /** Alternatywa od modelu jako kolejna wersja w laboratorium tej zmiany. */
+  async benchAddAlt(io: Host, id: string, index: number): Promise<void> {
+    const alt = (await io.get(S.lab)).alt.items[index]
+    if (!alt) return
+    if ((await io.get(S.lab)).bench?.forId !== id) await this.openBench(io, id)
+    await io.set(S.lab, l => {
+      const b = l.bench
+      if (!b) return l
+      if (b.variants.some(v => v.origin === 'alt' && v.code === alt.code)) return l
+      const vid = nextVariantId(b.variants)
+      if (!vid) return { ...l, bench: { ...b, error: 'Najwyżej 4 wersje. Usuń jedną, żeby dodać kolejną.' } }
+      return { ...l, bench: { ...b, variants: [...b.variants, { id: vid, label: alt.title, code: alt.code, origin: 'alt' as const }], sel: vid, line: 1, error: null } }
+    })
+  }
+
+  /** Przykład do nauki w Symulatorze: para A/B (przed i po przeróbce) albo jeden kod. */
+  async showExample(io: Host, ex: Example): Promise<void> {
+    const pair = ex.before ? { a: ex.before, b: ex.code, aStart: 1, bStart: 1, aLabel: 'przed', bLabel: 'po', hint: '' } : null
+    this.stopPlay()
+    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect: ex.dialect, source: ex.code, origin: `przykład: ${ex.label}`, note: ex.note, pair, edits: [], cursor: 0, variant: (pair ? 'B' : 'A') as 'A' | 'B', panel: 'state' as const, callArgs: '', playing: false }))
+    await io.set(S.tab, () => 'sim' as MentorTab)
+    // przykład od razu się odtwarza, drzewo widgetów nie ma kroków
+    if (!ex.widgets) void this.playSim(io)
+  }
+
+  /** „Krok po kroku” dla wybranej wersji i przypadku: pełny symulator w swojej zakładce. */
+  async benchStep(io: Host, caseIndex = 0): Promise<void> {
+    const lab = await io.get(S.lab)
+    const b = lab.bench
+    const c = b ? this.changeCache.get(b.forId) : undefined
+    const v = b?.variants.find(x => x.id === b.sel)
+    if (!b || !c || !v) return
+    this.stopPlay()
+    const dialect = simDialect(c.lang) ?? 'js'
+    const call = b.cases[caseIndex]
+    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: v.code, origin: `${c.file}: ${v.id} ${v.label}`, note: undefined, playing: false, pair: null, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: call ? caseStatement(call, dialect) : '' }))
     await io.set(S.tab, () => 'sim' as MentorTab)
   }
 
@@ -480,7 +591,7 @@ export class Mentor {
     // drugie kliknięcie chowa wyjaśnienie
     if ((await io.get(S.lab)).lessonFor === id) return void (await io.set(S.lab, l => ({ ...l, lessonFor: null, lessonId: null })))
     const levels = Object.fromEntries((await io.get(S.knowledge)).map(k => [k.id, k.level]))
-    const concept = interestingConcepts(c.concepts, levels)[0]
+    const concept = interestingConcepts(c.concepts, levels, true)[0]
     if (!concept) return
     const now = await io.now()
     const obsId = `chg-${id}`
@@ -505,7 +616,7 @@ export class Mentor {
     const c = this.changeCache.get(id)
     if (!c) return
     const levels = Object.fromEntries((await io.get(S.knowledge)).map(k => [k.id, k.level]))
-    const concept = interestingConcepts(c.concepts, levels)[0] ?? 'functions'
+    const concept = interestingConcepts(c.concepts, levels, true)[0] ?? 'functions'
     const now = await io.now()
     const built = changeQuestion(makeId('q', now), c, concept)
     if (built) return void (await this.presentQuiz(io, built, true))
@@ -529,6 +640,7 @@ export class Mentor {
       c.before ? `Kod przed zmianą:\n\`\`\`\n${c.before.slice(0, 3000)}\n\`\`\`` : 'Plik powstał w tej zmianie.',
       `Kod po zmianie:\n\`\`\`\n${c.after.slice(0, 6000)}\n\`\`\``,
       'Zaproponuj do 2 naprawdę innych sposobów osiągnięcia tego samego celu: inne podejście, a nie kosmetykę ani zmianę nazw. Każdy musi zachować to samo działanie. Gdy obecne rozwiązanie jest jedynym sensownym, zwróć pustą listę.',
+      'Zachowaj nazwę i parametry funkcji, żeby obie wersje dało się uruchomić tym samym wywołaniem. Kod ma być kompletny (całe funkcje), bez „...”.',
       'Nie podawaj wyników pomiarów ani twierdzeń o szybkości bez uzasadnienia w kodzie.',
       'Format: {"alternatives":[{"title":"krótka nazwa podejścia","idea":"1-2 zdania, jak działa","code":"kod w tym samym języku, do 30 linii","pros":["zaleta"],"cons":["wada"],"when":"kiedy to wybrać"}]}',
     ].join('\n\n')
@@ -547,21 +659,18 @@ export class Mentor {
   }
 
   /** Porównanie obecnego kodu z alternatywą w symulatorze (A = obecne, B = alternatywa). */
-  async compareAlternative(io: Host, id: string, index: number): Promise<void> {
-    const c = this.changeCache.get(id)
-    const alt = (await io.get(S.lab)).alt.items[index]
-    if (!c?.after || !alt) return
-    const dialect = simDialect(c.lang) ?? 'js'
-    await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: alt.code, origin: `${c.file}: ${alt.title}`, pair: { a: c.after!, b: alt.code, aStart: c.afterStart, bStart: 1, aLabel: 'obecne', bLabel: 'alternatywa', hint: '' }, edits: [], cursor: 0, variant: 'B' as const, panel: 'state' as const, callArgs: '' }))
-    await io.set(S.tab, () => 'sim' as MentorTab)
-  }
-
   /** Wkłada prośbę do pola wiadomości. Claude dostaje ją dopiero, gdy użytkownik wyśle Enterem. */
   async handOff(io: Host, id: string, index: number): Promise<void> {
     const c = this.changeCache.get(id)
     const alt = (await io.get(S.lab)).alt.items[index]
     if (!c || !alt) return
-    const text = `W ${c.file}${c.line ? ` (okolice linii ${c.line})` : ''} zmień rozwiązanie na podejście: ${alt.title}. ${alt.idea} Zachowaj obecne działanie i uruchom testy, jeśli są.`
+    const fence = '```'
+    const text = [
+      `W ${c.file}${c.line ? ` (okolice linii ${c.line})` : ''} przepisz ostatnią zmianę na podejście „${alt.title}”: ${alt.idea}`,
+      `Docelowy kod (propozycja, dopasuj do reszty pliku, ale nie zmieniaj podejścia):\n${fence}${c.lang}\n${redact(alt.code).text}\n${fence}`,
+      'Ograniczenia: zachowaj nazwę, parametry i zwracaną wartość funkcji oraz to, co widzą jej wywołujący. Nie ruszaj innych plików, chyba że bez tego kod się nie skompiluje.',
+      'Sprawdzenie: uruchom istniejące testy. Jeśli tej funkcji nic nie testuje, dopisz jeden test na przypadek, który obie wersje muszą obsłużyć tak samo, i pokaż wynik.',
+    ].join('\n\n')
     const ok = await io.fillPrompt(text).catch(() => false)
     await io.set(S.lab, l => ({ ...l, confirm: null, handed: ok ? 'Prośba czeka w polu wiadomości. Popraw ją albo wyślij Enterem.' : `Nie mogę wpisać do pola wiadomości. Skopiuj i wyślij sam: ${text}` }))
   }

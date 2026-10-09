@@ -4,15 +4,17 @@
 import type { Built } from './quiz'
 import type { ChangeFull } from './change'
 import { simDialect } from './change'
-import { autoCall } from '../sim/autocall'
-import { simulateCached } from '../ui/simcache'
+import { pairCall } from '../sim/autocall'
+import { cleanRun } from './runnable'
 
 const SAME = 'Taki sam jak przed zmianą'
 const THROWS = '(program rzuci wyjątek)'
 
 function outputOf(src: string, dialect: 'js' | 'dart'): string | null {
-  const r = simulateCached(src, dialect)
-  if (!r.ok) return r.error ? THROWS : null
+  // oceniane pytanie nie może stać na zaślepce, dopiskach do wycinka, fetchu, losowości ani zegarze
+  const r = cleanRun(src, dialect, true)
+  if (!r) return null
+  if (!r.ok) return THROWS
   const out = r.output.join(' | ')
   return out && out.length <= 160 ? out : null
 }
@@ -21,8 +23,10 @@ function outputOf(src: string, dialect: 'js' | 'dart'): string | null {
 export function changeQuestion(qid: string, c: ChangeFull, conceptId: string): Built | null {
   const dialect = simDialect(c.lang)
   if (!dialect || !c.after || !c.before) return null
-  const ac = autoCall(c.after, dialect)
-  const call = ac ? `\n${ac.call}` : ''
+  const pc = pairCall(c.before, c.after, dialect)
+  if (pc.problem) return null
+  const ac = pc.call ? { label: pc.label! } : null
+  const call = pc.call ? `\n${pc.call}` : ''
   const before = outputOf(c.before + call, dialect)
   const after = outputOf(c.after + call, dialect)
   if (!after || !before || after === THROWS) return null

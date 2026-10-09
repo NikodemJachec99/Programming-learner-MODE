@@ -196,6 +196,12 @@ export type MentorQuizState = {
 export type MentorSimState = {
   source: string
   origin: string
+  /** Przykład do nauki: na co patrzeć. Pusty dla kodu z projektu. */
+  note?: string
+  /** Trwa odtwarzanie krok po kroku (animacja). */
+  playing?: boolean
+  /** Tempo odtwarzania; domyślnie wolno. */
+  speed?: 'slow' | 'normal' | 'fast'
   mode: 'js' | 'sql' | 'cond'
   /** Język kodu w trybie 'js': JavaScript/TypeScript albo Dart. */
   dialect?: 'js' | 'dart'
@@ -235,6 +241,32 @@ export type MentorAlternative = {
   when: string
 }
 
+/** Jedna wersja kodu w laboratorium zmiany. */
+export type MentorBenchVariant = {
+  /** A, B, C, D */
+  id: string
+  label: string
+  code: string
+  /** Skąd: kod przed i po z narzędzia, alternatywa od modelu albo własna kopia do edycji. */
+  origin: 'before' | 'after' | 'alt' | 'edit'
+}
+
+/** Laboratorium w szczegółach zmiany: wersje, jawne przypadki i wybrana linia do edycji. */
+export type MentorBench = {
+  forId: string
+  variants: MentorBenchVariant[]
+  cases: string[]
+  /** Wybrana wersja (do edycji i do „Krok po kroku”). */
+  sel: string
+  /** Linia wybranej wersji do edycji (od 1). */
+  line: number
+  error: string | null
+  handed: string | null
+  /** Animacja uruchomienia: ile komórek wyniku już odsłonięto i klatka wskaźnika liczonej komórki. */
+  reveal?: number
+  frame?: number
+}
+
 export type MentorLab = {
   /** Wybrana zmiana albo null (lista). */
   selected: string | null
@@ -252,6 +284,8 @@ export type MentorLab = {
   lessonFor?: string | null
   lessonId?: string | null
   lessonAt?: number
+  /** Laboratorium otwarte w szczegółach zmiany. */
+  bench?: MentorBench | null
 }
 
 export type MentorUsage = {

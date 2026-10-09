@@ -28,6 +28,26 @@ jobs:
             Where-Object { $_.FullName -notmatch '\\types\\' } |
             ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null; "ok  $($_.FullName)" }
 
+  plugin-tests:
+    name: Testy pluginu i walidacja marketplace
+    runs-on: ubuntu-latest
+    env:
+      # hooki-funkcje są w Claude Code jeszcze za flagą; testy nie potrzebują konta
+      CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Claude Code (wersja, na której przechodzą testy lokalnie)
+        run: npm install -g @anthropic-ai/claude-code@2.1.283
+      - name: Walidacja marketplace i pluginu
+        run: |
+          claude plugin validate .
+          claude plugin validate plugins/claude-code-mentor
+      - name: Testy pluginu
+        run: claude plugin test plugins/claude-code-mentor
+
   shell-scripts:
     name: Skrypty macOS i Linux
     runs-on: macos-latest

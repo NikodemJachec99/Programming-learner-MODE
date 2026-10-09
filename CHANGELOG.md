@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.4.0
+
+### Laboratorium w Zmianach
+
+- „▶ Uruchom i porównaj” otwiera laboratorium pod kodem zmiany zamiast przenosić do Symulatora.
+- Wersje A (przed), B (po), alternatywy od modelu i własne kopie, najwyżej 4. Kopie edytujesz linia po linii, kod z narzędzia zostaje nietknięty.
+- Jawne przypadki (do 6) puszczone przez wszystkie wersje. Wiersz z różnymi wynikami jest oznaczony, brak funkcji w wersji nie udaje wyniku, wynik oparty na założeniu ma znak ≈.
+- „Sprawdź w projekcie” wstawia prośbę do Claude o uruchomienie prawdziwych testów z tymi przypadkami i porównanie z przewidywaniem. Mentor sam niczego z projektu nie uruchamia.
+- Alternatywa: „Dodaj do laboratorium” zamiast osobnego porównania w Symulatorze.
+- Symulator rozumie wyrażenia regularne (`/…/g`, `new RegExp`, `replace` z funkcją, `split`, `match`, `test`, `search`) i ma `trimStart`, `trimEnd`, `lastIndexOf` i kilka innych metod napisów. Wcześniej kod z regexem kończył się błędem „Nieznany znak”.
+- „Warto zrozumieć” nie pokazuje podstaw, gdy w zmianie nie ma nic poza nimi.
+
+### Animacja uruchomienia
+
+- Symulator: „▶ Odtwórz” przechodzi kod sam, krok po kroku, z podświetloną linią, zmiennymi, wyjściem i paskiem postępu. Domyślnie wolno, 8 s na krok, przełącznik tempa (średnio 4 s, szybko 1,8 s), „⏸ Pauza” w każdej chwili, każdy ręczny krok zatrzymuje odtwarzanie. Przykład do nauki odtwarza się od razu.
+- Laboratorium: po „Uruchom i porównaj” wyniki odsłaniają się po kolei, a liczona komórka (ok. 4 s) pokazuje, którą linię i który krok właśnie wykonuje. „▶ jeszcze raz” powtarza animację.
+
+### Prawdziwy kod czy przykład
+
+- Zmiany pokazują prawdziwy kod (przed, po, wyjaśnienie, testy przez Claude), a Symulator uczy na czystych przykładach.
+- „Zobacz na przykładzie” w zmianie i „Na przykładzie” w lekcji: para A/B dla każdej z 10 rozpoznanych przeróbek i przykład dla 25 pojęć, w tym Dart i drzewo widgetów Fluttera.
+- „Uruchom i porównaj”, „Krok po kroku” i pytanie ze zmiany tylko dla kodu, który wykonuje się bez importów, zaślepek, dopisków i założeń. Kod zależny od reszty projektu nie kończy się już czerwonym błędem, dostaje przykład.
+
+### Poprawki
+
+- Opis zmiany powstaje z linii po usunięciu sekretów, więc klucz albo hasło zmienione w literale nie trafia do bazy ani panelu, także przy wyłączonym zapisie kodu. Opisy zapisane wcześniej zostają w bazie, czyszczenie ich nie jest częścią tej wersji.
+- Porównanie A i B uruchamia tylko wywołanie, którego funkcje istnieją w obu wersjach. Gdy takiego nie ma, panel to mówi zamiast porównywać błędy. Przy wyniku opartym na założeniach (zaślepki, sieć, losowość, zegar) jest ostrzeżenie.
+- „Sprawdź się” ze zmiany nie robi ocenianego pytania, gdy wynik zależy od założenia symulatora.
+- „Poproś Claude o to” przekazuje pełny kod wybranej alternatywy, ograniczenia (ta sama sygnatura, bez ruszania innych plików) i sposób sprawdzenia. Model dostaje polecenie, żeby alternatywa miała tę samą nazwę i parametry.
+- CI uruchamia testy pluginu i walidację marketplace.
+
 ## 1.3.0
 
 ### Jeden mod

@@ -145,37 +145,44 @@ const tokens = (s: string) => s.match(/===|!==|<=|>=|==|!=|&&|\|\||\?\?|[<>+\-*/
 /** Pojęcia, które pojawiają się prawie w każdej zmianie: same w sobie nie są tematem do nauki. */
 export const BASIC_CONCEPTS = new Set(['variables', 'data-types', 'operators', 'functions', 'strings', 'arrays', 'objects-maps', 'conditionals', 'loops', 'modules-imports', 'logging', 'equality', 'boolean-logic'])
 
-type Refactor = { test: (r: string, a: string, lang: string) => boolean; text: (lang: string) => string }
+type Refactor = { id: string; test: (r: string, a: string, lang: string) => boolean; text: (lang: string) => string }
 
 const LOOP = /\bfor\s*\(|\bfor\s+\w+\s+(?:of|in)\b|\.forEach\(|\bwhile\s*\(/
 
 /** Typowe przeróbki rozpoznawane po tym, co zniknęło i co się pojawiło. Kolejność = ważność. */
 const REFACTORS: Refactor[] = [
   {
-    test: (r, a) => LOOP.test(r) && /\bawait\b/.test(r) && /Promise\.all(?:Settled)?\(|Future\.wait\(/.test(a) && !/Promise\.all|Future\.wait/.test(r),
+    id: 'promise-all', test: (r, a) => LOOP.test(r) && /\bawait\b/.test(r) && /Promise\.all(?:Settled)?\(|Future\.wait\(/.test(a) && !/Promise\.all|Future\.wait/.test(r),
     text: l => `Zamiast czekać w pętli na każde \`await\` po kolei, wszystkie zadania startują naraz (\`${l === 'dart' ? 'Future.wait' : 'Promise.all'}\`).`,
   },
   {
-    test: (r, a) => LOOP.test(r) && /\.(?:push|add)\(/.test(r) && /\.(?:map|filter|reduce|where|fold|flatMap)\(/.test(a) && !/\.(?:map|filter|reduce|where|fold|flatMap)\(/.test(r),
+    id: 'loop-to-map', test: (r, a) => LOOP.test(r) && /\.(?:push|add)\(/.test(r) && /\.(?:map|filter|reduce|where|fold|flatMap)\(/.test(a) && !/\.(?:map|filter|reduce|where|fold|flatMap)\(/.test(r),
     text: () => 'Pętla, która dokładała elementy (`push`), zamieniona na `map`/`filter`/`reduce`: wynik powstaje w jednym wyrażeniu.',
   },
-  { test: (r, a) => /\.then\(/.test(r) && /\bawait\b/.test(a) && !/\.then\(/.test(a), text: () => '`.then(...)` zamienione na `await`: ten sam kod asynchroniczny, czytany z góry na dół.' },
-  { test: (r, a) => /\belse\s+if\b/.test(r) && /\bswitch\s*\(/.test(a) && !/\bswitch\s*\(/.test(r), text: () => 'Łańcuch `else if` zamieniony na `switch`.' },
-  { test: (r, a) => /\bvar\s/.test(r) && /\b(?:const|let)\s/.test(a) && !/\bvar\s/.test(a), text: () => '`var` zamienione na `const`/`let`: zmienna żyje tylko w swoim bloku.' },
-  { test: (r, a) => /\btry\s*\{/.test(a) && !/\btry\s*\{/.test(r), text: () => 'Dodana obsługa błędów: `try`/`catch`. Błąd nie wywróci już całego programu.' },
+  { id: 'then-to-await', test: (r, a) => /\.then\(/.test(r) && /\bawait\b/.test(a) && !/\.then\(/.test(a), text: () => '`.then(...)` zamienione na `await`: ten sam kod asynchroniczny, czytany z góry na dół.' },
+  { id: 'switch', test: (r, a) => /\belse\s+if\b/.test(r) && /\bswitch\s*\(/.test(a) && !/\bswitch\s*\(/.test(r), text: () => 'Łańcuch `else if` zamieniony na `switch`.' },
+  { id: 'var-let', test: (r, a) => /\bvar\s/.test(r) && /\b(?:const|let)\s/.test(a) && !/\bvar\s/.test(a), text: () => '`var` zamienione na `const`/`let`: zmienna żyje tylko w swoim bloku.' },
+  { id: 'try-catch', test: (r, a) => /\btry\s*\{/.test(a) && !/\btry\s*\{/.test(r), text: () => 'Dodana obsługa błędów: `try`/`catch`. Błąd nie wywróci już całego programu.' },
   {
-    test: (r, a) => /[!=]==?\s*(?:null|undefined)\b|\?\.|\?\?/.test(a) && !/[!=]==?\s*(?:null|undefined)\b|\?\.|\?\?/.test(r),
+    id: 'null-check', test: (r, a) => /[!=]==?\s*(?:null|undefined)\b|\?\.|\?\?/.test(a) && !/[!=]==?\s*(?:null|undefined)\b|\?\.|\?\?/.test(r),
     text: () => 'Dodane zabezpieczenie przed pustą wartością (`null`/`undefined`).',
   },
-  { test: (r, a) => /\bthrow\b/.test(a) && !/\bthrow\b/.test(r), text: () => 'Dodane `throw`: przy złych danych kod kończy się czytelnym błędem, zamiast liczyć dalej na śmieciach.' },
-  { test: (r, a) => /\b(?:test|it|describe)\s*\(\s*['"`]|\bexpect\(/.test(a) && !/\bexpect\(/.test(r), text: () => 'Dodany test: sprawdza, że kod robi to, co ma robić.' },
+  { id: 'throw', test: (r, a) => /\bthrow\b/.test(a) && !/\bthrow\b/.test(r), text: () => 'Dodane `throw`: przy złych danych kod kończy się czytelnym błędem, zamiast liczyć dalej na śmieciach.' },
+  { id: 'test', test: (r, a) => /\b(?:test|it|describe)\s*\(\s*['"`]|\bexpect\(/.test(a) && !/\bexpect\(/.test(r), text: () => 'Dodany test: sprawdza, że kod robi to, co ma robić.' },
   {
-    test: (r, a, l) => l === 'ts' && count(a, TYPE_ANN) >= count(r, TYPE_ANN) + 2,
+    id: 'types', test: (r, a, l) => l === 'ts' && count(a, TYPE_ANN) >= count(r, TYPE_ANN) + 2,
     text: () => 'Dodane typy: TypeScript wyłapie złą wartość, zanim kod się uruchomi.',
   },
 ]
 const TYPE_ANN = /[\w)\]]\s*:\s*(?:string|number|boolean|void|unknown|Promise<|Record<|[A-Z]\w*|\w+\[\])/g
 const count = (s: string, re: RegExp) => (s.match(re) ?? []).length
+
+/** Identyfikatory rozpoznanych przeróbek, najważniejsza pierwsza (do doboru przykładu). */
+export function refactorIds(removed: readonly string[], added: readonly string[], lang: string): string[] {
+  const r = removed.join('\n')
+  const a = added.join('\n')
+  return REFACTORS.filter(x => x.test(r, a, lang)).map(x => x.id)
+}
 
 /** Opisy rozpoznanych przeróbek (najwyżej 2), np. pętla z `await` → `Promise.all`. */
 export function refactorFacts(removed: readonly string[], added: readonly string[], lang: string): string[] {

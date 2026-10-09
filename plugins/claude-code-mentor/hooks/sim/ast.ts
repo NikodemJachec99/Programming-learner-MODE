@@ -6,6 +6,7 @@ type Base = { start: number; end: number; line: number }
 export type Expr =
   | (Base & { type: 'Num'; value: number; raw: string })
   | (Base & { type: 'Str'; value: string })
+  | (Base & { type: 'Regex'; pattern: string; flags: string })
   | (Base & { type: 'Template'; parts: ({ kind: 'text'; text: string } | { kind: 'expr'; expr: Expr })[] })
   | (Base & { type: 'Bool'; value: boolean })
   | (Base & { type: 'Null' })
