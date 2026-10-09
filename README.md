@@ -7,7 +7,7 @@
   <a href="#wymagania"><img alt="Windows i macOS" src="https://img.shields.io/badge/Windows%20%7C%20macOS-0078d4?style=flat-square"></a>
   <a href="#flutter-i-dart"><img alt="Flutter i Dart" src="https://img.shields.io/badge/Flutter%20%26%20Dart-02569B?style=flat-square&logo=flutter&logoColor=white"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-101%20%2F%20101-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-125%20%2F%20125-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licencja-MIT-6b7280?style=flat-square"></a>
 </p>
@@ -85,20 +85,25 @@ Wszystko dzieje się w osobnym panelu obok rozmowy. Normalna praca z Claude zost
 
 Pierwsza zakładka panelu. Odpowiada na pytanie: co Claude właśnie zmienił i co to zmienia w działaniu.
 
+Gdy Claude uruchamia subagentów, z boku otwiera się panel **Agenci** (jak w savvy-progress): koszt, tokeny i czas na kafelkach, a niżej każdy subagent z krabem w kostiumie roli (pirat dla Explore, detektyw dla Plan, inżynier dla zwykłego agenta), zadaniem, modelem, tym, co robi w tej chwili, zajętością kontekstu, kosztem i czasem. Nad promptem przy każdym poleceniu jest pasek zadania: w trakcie pracy jedzie po nim pasmo pikseli, pigułka mówi, ile kroków i plików już poszło, a krab przebiera się za to, co Claude robi (lupa przy czytaniu, klucz przy edycji). Po odpowiedzi pasek robi się zielony z „Gotowe · +42 −10”, a z subagentami pokazuje „Agenci k/n” i procent. ×N i `/mentor-agents` pokazują albo chowają panel. Komendy uruchomione w tle mają własny panel **Zadania w tle** (`/mentor-tasks`): co robią, ostatnie linie wyjścia na żywo (bez sekretów), czas, rozwijane wyjście, „Zatrzymaj” i stan końcowy.
+
+Na górze widać ostatnie zadanie jednym zdaniem: polecenie, ile zmian w ilu plikach, ile dodanych i usuniętych linii, ile nieudanych. Pod nim **pliki tej tury**: zwarte drzewo plików, które Claude czytał i zmieniał. Fioletowy znacznik to odczyt, pomarańczowy edycja w toku, zielony ✓ świeżo zakończona zmiana, czerwony ✗ błąd, który zostaje do końca tury. Po nazwie aktywnego pliku przesuwa się pasmo światła, obok są liczniki `+dodane −usunięte`. Po kilku sekundach plik wraca do neutralnego wyglądu, a kliknięcie nazwy otwiera jego zmianę. Odczyt plików jest obserwowany tylko pasywnie i nie wpływa na poziom wiedzy.
+
 0. **Na start** karta z jednym zdaniem o tym, co tu jest, i testem poziomu: 6 pytań „co wypisze ten kod”, od zmiennych do pętli zdarzeń. Wynik ustawia punkt startowy, a Ścieżka przed testem nie poleca podstaw na ślepo.
 1. **Lista zmian** pogrupowana po Twoich poleceniach („dodaj walidację emaila”), z plikiem, liczbą linii i tym, co warto zrozumieć. Podstawy (zmienne, funkcje, pętle) i pojęcia już opanowane nie są wypisywane. Historia zostaje między sesjami.
-2. **Jedno kliknięcie** otwiera zmianę: krótko co się zmieniło, a pod spodem przełącznik **Zmiany / Przed / Po**. Opis rozpoznaje typowe przeróbki: pętla z `await` → `Promise.all`, pętla z `push` → `map`/`filter`, `.then` → `await`, dodany `try`/`catch`, sprawdzenie `null`, `throw`, typy, test.
+2. **Jedno kliknięcie** otwiera zmianę w stylu Replay Theater: ile edycji i linii poszło w tym zadaniu, **edycje po kolei** z kółkami na linii (bieżąca różowa) i „Edycja 3 z 7”. Diff zaznacza zmienione słowa, a „Poprzednia edycja” i „Następna edycja” (klawisze `p` i `n`) przechodzą dalej. Pod spodem krótko co się zmieniło i przełącznik **Zmiany / Przed / Po**, a w szerokim panelu także **Obok**. Diff najpierw pokazuje same zmiany z jedną linią kontekstu, a cały jest pod „cały diff”. Opis rozpoznaje typowe przeróbki: pętla z `await` → `Promise.all`, pętla z `push` → `map`/`filter`, `.then` → `await`, dodany `try`/`catch`, sprawdzenie `null`, `throw`, typy, test.
 3. **Wyjaśnij** pokazuje lekcję o tej zmianie na miejscu, pod kodem, bez przeskakiwania do innej zakładki. Pod lekcją dwa dopytania: „Co jest pod spodem” i „Inny przykład”.
 4. **Zobacz na przykładzie** ładuje do Symulatora krótki, czysty przykład tego samego mechanizmu, a nie wycinek Twojego programu. Gdy Claude zamienił pętlę z `await` na `Promise.all`, przykład ma te same dwie wersje w 10 liniach i widać, że w B oba pobrania startują od razu. Rozpoznane przeróbki mają własne pary A/B, a pozostałe pojęcia (domknięcia, `?.` i `??`, klasy, Future w Darcie, drzewo widgetów Fluttera i inne) jeden przykład. Każdy przykład wykonuje się w całości, sprawdza to test.
 5. **▶ Uruchom i porównaj** pojawia się tylko wtedy, gdy Twój kod da się uczciwie wykonać: bez importów i nazw spoza fragmentu, bez dopisków symulatora i bez założeń o sieci, losowości czy zegarze. Mała czysta funkcja przechodzi, kod zależny od reszty projektu dostaje przykład. Uruchomienie otwiera laboratorium na miejscu, pod kodem zmiany. Wersja A to kod przed, B to kod po, a każdy przypadek (np. `label(10)`) idzie przez wszystkie wersje naraz. Gdy Claude zmienił `if (x < 10)` na `if (x <= 10)`, Mentor sam dodaje przypadek z wartością z diffu, czyli dokładnie przypadek brzegowy, i oznacza wiersz „różne wyniki”: A wypisało „dużo”, B „mało”.
    - **Własne przypadki** wpisujesz jako wywołanie, do 6 naraz.
-   - **＋ kopia** robi wersję C albo D do edycji linia po linii. Kod z narzędzia zostaje nietknięty.
+   - **＋ kopia** robi wersję C albo D. Operator (np. `<` na `<=`) zmieniasz z listy, liczbę albo napis wpisujesz wprost, a całą linię edytujesz osobno. Tabela przelicza się od razu. Kod z narzędzia zostaje nietknięty.
+   - Wyniki odsłaniają się po kolei z widoczną linią i krokiem, który się właśnie liczy. „⏭ pokaż od razu” kończy animację. Same wyniki są policzone raz i zapamiętane, więc animacja ani przerysowanie panelu nie liczą ich ponownie.
    - Wersja, w której nie ma wołanej funkcji, dostaje „brak funkcji”, a nie fałszywy wynik. Wynik oparty na założeniu symulatora ma znak ≈.
    - **Krok po kroku** otwiera wybraną wersję w pełnym symulatorze.
    - **Sprawdź w projekcie** wstawia do pola wiadomości prośbę, żeby Claude uruchomił prawdziwe testy z tymi przypadkami i pokazał je obok przewidywania. Mentor sam niczego z projektu nie uruchamia.
 6. **Sprawdź się** zadaje pytanie z tej konkretnej zmiany: te same dane idą przez kod przed i po, a Ty przewidujesz wynik wersji po. Odpowiedź liczy symulator, nie model, i tylko wtedy, gdy kod wykonuje się czysto. Gdy się nie da, zamiast tego jest **zgadywanie zmiany**: widzisz kod przed i swoje polecenie, bierzesz podpowiedź (gdzie i co, bez rozwiązania), a potem odsłaniasz prawdziwą zmianę.
 7. **Inne podejście** prosi model o 1 albo 2 naprawdę inne rozwiązania tego samego problemu, z zaletami, wadami i tym, kiedy je wybrać. Każde można dodać do laboratorium jako kolejną wersję i puścić na tych samych przypadkach.
-8. **Poproś Claude o to** wstawia gotową prośbę do pola wiadomości. Kod się nie zmienia, dopóki sam jej nie wyślesz Enterem, a zmiana przechodzi przez zwykłe narzędzia i uprawnienia Claude.
+8. **Poproś Claude o to** najpierw pokazuje kartę decyzji: której zmiany dotyczy, jakie podejście, co zachować, znane różnice z oznaczeniem źródła (✓ symulator albo propozycja AI, niesprawdzona), co sprawdzić i co pozostaje niepewne. Domyślny wybór to **Anuluj**. Dopiero **Wstaw polecenie dla Claude** wkłada tę samą treść do pola wiadomości. Kod się nie zmienia, dopóki sam jej nie wyślesz Enterem, a zmiana przechodzi przez zwykłe narzędzia i uprawnienia Claude.
 
 Skąd „przed”: Edit i Write zwracają treść pliku sprzed zmiany i dokładny patch. Mentor bierze „przed” z tej treści, a „po” liczy, nakładając na nią ten patch. Niczego nie odtwarza ani nie zgaduje. Gdy narzędzie nie odda poprzedniej wersji (np. bardzo duży plik), widok „Przed” jest oznaczony jako niedostępny. Nieudane i odrzucone edycje są na liście jako nieudane, bez kodu. Pliki wrażliwe tylko jako wpis bez treści.
 
@@ -191,7 +196,7 @@ bash scripts/uninstall.sh --delete-data       # z usunięciem danych (najpierw e
 bash scripts/diagnose.sh                      # diagnostyka, niczego nie zmienia
 ```
 
-Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.4.0”).
+Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.4.1”).
 
 Pracujesz nad kodem Mentora? Po każdej zmianie wystarczy `node scripts/update-local.mjs`: przepisuje wersję z `plugin.json` do kodu i marketplace, aktualizuje instalację i wgrywa nowy kod do cache, więc w otwartej sesji działa już `/reload-plugins`.
 
@@ -320,16 +325,21 @@ Do tego 10 nowych pojęć w grafie wiedzy (obszar *Flutter i aplikacje mobilne*)
 
 Część Mentora, nie osobny mod. Włączasz go w Ustawieniach albo przez `/mentor pasek`.
 
-- Jedna linia nad promptem: kolorowy pasek, procent zajętości, licznik cache, przycisk **Mentor**.
+- Jedna linia nad promptem: pogoda kontekstu (☀ ☁ ☂ ☇ ↯), kolorowy pasek, procent zajętości, liczba tokenów, zmiana względem poprzedniej tury (`▲ +12.3k`), trend 12 ostatnich tur (`▂▃▅▇`), licznik cache, przycisk **Mentor**.
+- W wąskim oknie najpierw znika trend, potem zmiana tury, na końcu licznik cache. Procent i tokeny zostają zawsze.
+- Historia tur jest w pamięci pluginu tej sesji i wraca po przeładowaniu.
+- Mentor dokłada swój pasek do tego, co nad promptem rysują inne mody, zamiast je zastępować.
+- Pasek nie pokazuje progów automatycznej kompakcji: Claude Code liczy je inaczej niż procent okna.
 - Na Claude Desktop pasek jest rysowany w SVG z dymkami. W terminalu jest wersją tekstową.
-- Licznik cache liczy od końca ostatniej odpowiedzi: zielony powyżej 5 minut, żółty poniżej, czerwony po wygaśnięciu. W trakcie odpowiedzi pokazuje `cache: odświeżany`.
+- Licznik cache to czas do wygaśnięcia cache promptu (60 minut na planach Claude, 5 minut przez API), liczony od końca ostatniej odpowiedzi: zielony powyżej 5 minut, żółty poniżej, czerwony po wygaśnięciu. W trakcie odpowiedzi pokazuje `cache: odświeżany`. Po wygaśnięciu kolejna wiadomość jest liczona od nowa, bez taniego odczytu z cache.
 - Dane o kontekście pochodzą z lokalnego oszacowania `/context`, więc pasek nie kosztuje żadnego wywołania API.
 
 ## Prywatność
 
 - **Dane tylko lokalnie.** Brak telemetrii, brak synchronizacji, brak zewnętrznych serwerów.
 - **Pliki wrażliwe są pomijane:** `.env*`, klucze, certyfikaty, `credentials`, `secrets`, `.npmrc`, `.ssh`, `wp-config.php`.
-- **Sekrety są wycinane** przed zapisem i przed wysłaniem do AI: klucze API Anthropic, OpenAI, Stripe, Google i AWS, tokeny GitHub i Slack, JWT, hasła w adresach URL i przypisaniach, klucze prywatne.
+- **Sekrety są wycinane** przed zapisem i przed wysłaniem do AI: klucze API Anthropic, OpenAI, Stripe, Google i AWS, tokeny GitHub i Slack, JWT, nagłówki `Authorization: Bearer`, hasła w adresach URL i przypisaniach, klucze prywatne. Dotyczy też opisów zmian, poleceń Bash i Twoich poleceń w historii. To filtry na wzorce, więc nietypowy sekret może przejść: nie wklejaj haseł do poleceń.
+- **Stara historia jest czyszczona raz:** opisy zmian, polecenia i obserwacje zapisane przed wersją 1.5 przechodzą przez te same filtry, a przed zapisem powstaje kopia bazy.
 - Ustawienie **„nie wysyłaj kodu”** całkowicie wyłącza przekazywanie kodu do lekcji AI.
 - **Kod zmian w Change Lab** jest tylko lokalnie: okno wokół zmiany (do kilkuset linii), po wycięciu sekretów, do 400 zmian na projekt i najwyżej 60 dni. Nie trafia do eksportu JSON. Ustawienie **„Zapisuj kod zmian”** wyłącza jego zapis, zostaje sam opis zmiany.
 - Lekcje AI idą tym samym kanałem i kontem co sam Claude Code. Nie startują tury w rozmowie i niczego nie zmieniają w plikach.
@@ -401,8 +411,8 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 78 / 78 |
-| `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian | 18 / 18 |
+| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 101 / 101 |
+| `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian, czyszczenie starej historii | 19 / 19 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |
 

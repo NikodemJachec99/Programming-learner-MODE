@@ -46,10 +46,26 @@ export function runCase(code: string, call: string, dialect: 'js' | 'dart'): Ben
  * gdy co najmniej dwie wersje, które dało się uczciwie uruchomić, dały inny wynik.
  */
 export function runBench(variants: readonly MentorBenchVariant[], cases: readonly string[], dialect: 'js' | 'dart'): { cells: BenchCell[][]; differs: boolean[] } {
+  // klucz to dokładnie to, co wpływa na wynik: kod wersji, przypadki i dialekt
+  const key = `${dialect}\u0000${variants.map(v => v.code).join('\u0001')}\u0000${cases.join('\u0001')}`
+  const hit = BENCH_CACHE.get(key)
+  if (hit) {
+    benchStats.hits++
+    return hit
+  }
+  benchStats.computed++
   const cells = cases.map(c => variants.map(v => runCase(v.code, c, dialect)))
   const differs = cells.map(row => new Set(row.filter(x => x.kind === 'ok' || x.kind === 'error').map(x => x.text)).size > 1)
-  return { cells, differs }
+  const res = { cells, differs }
+  BENCH_CACHE.set(key, res)
+  if (BENCH_CACHE.size > 32) BENCH_CACHE.delete(BENCH_CACHE.keys().next().value as string)
+  return res
 }
+
+/** Wyniki tabel laboratorium: przerysowanie i klatki animacji nie liczą ich od nowa. */
+const BENCH_CACHE = new Map<string, { cells: BenchCell[][]; differs: boolean[] }>()
+/** Liczniki do pomiarów i testów: ile tabel policzono, ile wzięto z pamięci. */
+export const benchStats = { computed: 0, hits: 0 }
 
 export function validCase(call: string): string | null {
   const t = call.trim()

@@ -28,6 +28,14 @@ export type Host = {
   pluginRoot: string
   fsRead: (path: string) => Promise<string>
   fsExists: (path: string) => Promise<boolean>
+  /** Wpisy katalogu (nazwa, rodzaj, rozmiar, czas zmiany). */
+  fsList: (path: string) => Promise<{ name: string; kind: 'file' | 'dir' | 'other'; size: number; mtimeMs: number }[]>
+  /** Boczny panel „Pliki”. */
+  openFiles: () => Promise<UiOpenResult>
+  /** Boczny panel „Zadania w tle”. */
+  openTasks: () => Promise<UiOpenResult>
+  /** Zatrzymuje zadanie w tle (TaskStop), tylko po kliknięciu. */
+  stopTask: (id: string) => Promise<void>
   run: (argv: readonly string[], init?: ProcessRunInit) => Promise<ProcessRunResult>
   storeGet: (key: string) => Promise<unknown>
   storeSet: (key: string, value: unknown) => Promise<void>
@@ -36,6 +44,10 @@ export type Host = {
   log: (text: string) => void
   toast: (text: string) => void
   openPane: () => Promise<UiOpenResult>
+  /** Boczny panel „Agenci”. */
+  openAgents: () => Promise<UiOpenResult>
+  /** Otwiera panel agentów albo zamyka, gdy jest otwarty (jak ×N w savvy-progress). True, gdy otwarty. */
+  toggleAgents: () => Promise<boolean>
   panes: () => Promise<readonly UiPane[]>
   selection: () => Promise<UiSelection | undefined>
 }
@@ -70,6 +82,10 @@ export function offlineHost(base: Pick<Host, 'get' | 'set' | 'now' | 'invalidate
     pluginRoot: '',
     fsRead: no,
     fsExists: () => Promise.resolve(false),
+    fsList: () => Promise.resolve([]),
+    openFiles: () => Promise.resolve({ isPlaced: true as const }),
+    openTasks: () => Promise.resolve({ isPlaced: true as const }),
+    stopTask: () => Promise.resolve(),
     run: no,
     storeGet: () => Promise.resolve(undefined),
     storeSet: () => Promise.resolve(),
@@ -78,6 +94,8 @@ export function offlineHost(base: Pick<Host, 'get' | 'set' | 'now' | 'invalidate
     log: () => undefined,
     toast: () => undefined,
     openPane: () => Promise.resolve({ isPlaced: true as const }),
+    openAgents: () => Promise.resolve({ isPlaced: true as const }),
+    toggleAgents: () => Promise.resolve(true),
     panes: () => Promise.resolve([]),
     selection: () => Promise.resolve(undefined),
   }

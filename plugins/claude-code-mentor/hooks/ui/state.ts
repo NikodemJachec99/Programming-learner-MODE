@@ -24,6 +24,11 @@ import type {
 } from '../../types'
 import type { ChangeMeta } from '../engine/change'
 import type { BarSnapshot } from './bar'
+import type { Activity } from '../engine/activity'
+import type { AgentRun } from '../engine/agents'
+import type { BgTask } from '../engine/tasks'
+import type { FilesState } from '../engine/files'
+import { EMPTY_FILES } from '../engine/files'
 
 export const DEFAULT_SETTINGS: MentorSettings = {
   autoTeach: true,
@@ -88,8 +93,13 @@ export type StateShape = {
   unseen: number
   changes: ChangeMeta[]
   lab: MentorLab
-  bar: { snap: BarSnapshot | null; lastRequestAt: number }
+  bar: { snap: BarSnapshot | null; lastRequestAt: number; history: number[] }
   placement: MentorPlacement
+  activity: Activity
+  flash: { text: string; tone: 'ok' | 'error'; until: number } | null
+  agents: AgentRun[]
+  tasks: BgTask[]
+  files: FilesState
 }
 export type StateKey = keyof StateShape
 
@@ -114,6 +124,11 @@ export const S = {
   lab: 'lab',
   bar: 'bar',
   placement: 'placement',
+  activity: 'activity',
+  flash: 'flash',
+  agents: 'agents',
+  tasks: 'tasks',
+  files: 'files',
 } as const satisfies Record<StateKey, StateKey>
 
 const initial = (): StateShape => ({
@@ -135,8 +150,13 @@ const initial = (): StateShape => ({
   unseen: 0,
   changes: [],
   lab: DEFAULT_LAB,
-  bar: { snap: null, lastRequestAt: 0 },
+  bar: { snap: null, lastRequestAt: 0, history: [] },
   placement: { status: 'none', index: 0, answers: [], last: null },
+  activity: { turn: 0, files: [] },
+  flash: null,
+  agents: [],
+  tasks: [],
+  files: EMPTY_FILES,
 })
 
 const mem: StateShape = initial()

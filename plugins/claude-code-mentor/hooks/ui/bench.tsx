@@ -9,12 +9,52 @@ import { mentor } from '../mentor'
 import { MAX_CASES, deleteLine, insertLineAfter, nextVariantId, regressionPrompt, replaceLine, runBench, validCase } from '../engine/bench'
 import { codeLanguage } from '../engine/diff'
 import { code, label, muted } from './kit'
+import { pixelBarSvg, pixelBarText } from './visuals'
+import type { Elements } from 'claude-code'
+import { dialectOps, simSites } from './simcache'
+import { OP_GROUPS, applyEdits } from '../sim/variants'
 import type { Kit } from './kit'
 import { S } from './state'
 
 const editable = (v: MentorBenchVariant) => v.origin === 'edit' || v.origin === 'alt'
 const CELL_COLOR = { ok: undefined, error: 'error', assumed: 'warning', missing: 'subtle' } as const
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+/**
+ * Szybka edycja kopii: operatory z listy (np. < na <=) i wartości wpisywane wprost.
+ * Każda zmiana od razu przelicza tabelę wyników powyżej. Najwyżej 4 operatory i 3 wartości.
+ */
+function quickEdits(k: Kit, src: string, dialect: 'js' | 'dart', apply: (code: string) => unknown): RenderElement | null {
+  const { Box, Text, Select, Input } = k.E
+  const sites = simSites(src, dialect)
+  const ops = sites.ops.slice(0, 4)
+  const values = sites.values.slice(0, 3)
+  if (!ops.length && !values.length) return null
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={0}>
+      {ops.map(site => (
+        <Box key={`qe-op-${site.id}`} flexDirection="row" columnGap={1} alignItems="center">
+          <Text dimColor>{`l.${site.line}`}</Text>
+          <Select
+            key={`qe-op-${site.id}`}
+            value={site.op}
+            options={dialectOps(OP_GROUPS[site.group], dialect).map(op => ({ value: op, label: op }))}
+            onSelect={v => (v === site.op ? undefined : apply(applyEdits(src, [{ start: site.start, end: site.end, text: v }])))}
+          />
+        </Box>
+      ))}
+      {values.map(site => (
+        <Input
+          key={`qe-val-${site.id}-${site.raw}`}
+          label={`l.${site.line} ${site.name} =`}
+          value={site.raw}
+          submitLabel="zmień"
+          onSubmit={v => (v.trim() && v !== site.raw ? apply(applyEdits(src, [{ start: site.start, end: site.end, text: v.trim() }])) : undefined)}
+        />
+      ))}
+    </Box>
+  )
+}
 
 export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang: string, dialect: 'js' | 'dart'): RenderElement {
   const { Box, Text, Button, Input, Select } = k.E
@@ -43,7 +83,16 @@ export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang
   return (
     <Box flexDirection="column">
       {label(k, 'Laboratorium', running ? `${SPIN[(b.frame ?? 0) % SPIN.length]} uruchamiam ${done + 1}/${total}` : 'symulator, pliki bez zmian')}
-      {running && <Text color="claude">{`${'▰'.repeat(Math.round((done / Math.max(1, total)) * 16))}${'▱'.repeat(16 - Math.round((done / Math.max(1, total)) * 16))}`}</Text>}
+      {running &&
+        (k.surface === 'desktop' || k.surface === 'vscode' ? (
+          (() => {
+            const { Svg } = k.E as Elements['desktop']
+            const W = Math.max(160, Math.min(520, k.cols * 8 - 40))
+            return <Svg key="bench-bar" source={pixelBarSvg(done / Math.max(1, total), W, '#d97757', `${done}/${total}`, true)} alt={`uruchamiam ${done + 1} z ${total}`} width={W} height={16} />
+          })()
+        ) : (
+          <Text color="claude">{pixelBarText(done / Math.max(1, total), 20)}</Text>
+        ))}
 
       {/* wersje */}
       <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
@@ -108,8 +157,9 @@ export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang
       {/* edycja wybranej wersji */}
       {editable(sel) ? (
         <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>{`Wersja ${sel.id}: wybierz linię i wpisz nową treść`}</Text>
+          <Text dimColor>{`Wersja ${sel.id}: zmień operator albo wartość, albo całą linię`}</Text>
           {code(k, sel.code, codeLanguage(lang))}
+          {quickEdits(k, sel.code, dialect, cd => editCode(() => cd))}
           <Select
             key="bench-line"
             value={String(line)}
@@ -135,8 +185,8 @@ export function renderBench(io: Host, k: Kit, b: MentorBench, file: string, lang
 
       <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
         {b.cases.length > 0 && (
-          <Button key="bench-replay" plain dimColor onPress={() => (set(x => ({ ...x, reveal: 0, frame: 0 })), void mentor.animateBench(io, b.cases.length * b.variants.length))}>
-            {running ? 'uruchamiam…' : '▶ jeszcze raz'}
+          <Button key="bench-replay" plain dimColor onPress={() => (running ? mentor.skipBench(io) : mentor.animateBench(io))}>
+            {running ? '⏭ pokaż od razu' : '▶ jeszcze raz'}
           </Button>
         )}
         <Button key="bench-step" onPress={() => mentor.benchStep(io, 0)}>

@@ -9,6 +9,8 @@ import { ago, code, md } from './kit'
 import type { Kit } from './kit'
 import { S } from './state'
 import { loadSim } from './sim'
+import { waiting } from './motion'
+import { FEEDBACK_KINDS, FEEDBACK_LABEL } from '../engine/feedback'
 import { exampleFor } from '../engine/examples'
 import { runnable } from '../engine/runnable'
 
@@ -49,6 +51,7 @@ export function lessonBlock(io: Host, k: Kit, lesson: MentorLesson, open: Set<st
     ...b.simplifications.map(u => `_Uproszczenie: ${u}_`),
   ].filter((x): x is string => !!x && !!x.trim())
   const fus = lesson.followUps ?? []
+  const vote = mentor.feedback.lessons[lesson.id]?.kind
   const fuBusy = fus.some(f => f.status === 'loading')
 
   return (
@@ -92,7 +95,7 @@ export function lessonBlock(io: Host, k: Kit, lesson: MentorLesson, open: Set<st
       {fus.map(f => (
         <Box key={`fu-${f.kind}`} flexDirection="column" borderStyle="round" borderColor={f.status === 'loading' ? 'subtle' : 'suggestion'} paddingX={1} marginTop={1}>
           <Text bold>{f.title}</Text>
-          {f.status === 'loading' ? <Text dimColor>Piszę… zwykle 10 do 30 s</Text> : md(k, f.text)}
+          {f.status === 'loading' ? waiting(k, 'Piszę… zwykle 10 do 30 s', mentor.frame, `fu-wait-${f.kind}`) : md(k, f.text)}
           {f.note && <Text dimColor wrap="wrap">{f.note}</Text>}
         </Box>
       ))}
@@ -113,6 +116,14 @@ export function lessonBlock(io: Host, k: Kit, lesson: MentorLesson, open: Set<st
         <Button key="l-example" onPress={() => (fuBusy ? undefined : mentor.lessonFollowUp(io, 'example'))}>
           Inny przykład
         </Button>
+      </Box>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+        <Text dimColor>{vote ? '✓ zapamiętane:' : 'Jak było?'}</Text>
+        {FEEDBACK_KINDS.map(kind => (
+          <Button key={`l-fb-${kind}`} plain dimColor={vote !== kind} onPress={() => (fuBusy ? undefined : mentor.lessonFeedback(io, kind))}>
+            {FEEDBACK_LABEL[kind]}
+          </Button>
+        ))}
       </Box>
     </Box>
   )
@@ -148,7 +159,7 @@ export async function renderLesson(io: Host, k: Kit): Promise<RenderElement> {
       <Box flexDirection="column">
         {picker}
         {busy ? (
-          <Text color="suggestion" wrap="wrap">{`${job.message} Zwykle 10 do 30 s.`}</Text>
+          waiting(k, `${job.message} Zwykle 10 do 30 s.`, mentor.frame, 'ls-wait')
         ) : (
           <Text dimColor wrap="wrap">Tu są lekcje o Twoim kodzie. Najszybciej: w zakładce Zmiany wybierz zmianę i kliknij „Wyjaśnij”.</Text>
         )}
@@ -159,7 +170,7 @@ export async function renderLesson(io: Host, k: Kit): Promise<RenderElement> {
   return (
     <Box flexDirection="column">
       {picker}
-      {busy && <Text color="suggestion" wrap="wrap">{`${job.message} Zwykle 10 do 30 s.`}</Text>}
+      {busy && waiting(k, `${job.message} Zwykle 10 do 30 s.`, mentor.frame, 'ls-wait2')}
       <Box marginTop={picker ? 1 : 0}>{lessonBlock(io, k, lesson, new Set(view.openSections), now)}</Box>
     </Box>
   )

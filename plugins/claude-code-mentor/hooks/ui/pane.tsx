@@ -1,7 +1,7 @@
 import type { RenderElement, RenderSurface } from 'claude-code'
 import type { Host } from '../host'
 import type { MentorTab } from '../../types'
-import { conceptById } from '../mentor'
+import { conceptById, mentor } from '../mentor'
 import type { El, Kit } from './kit'
 import { renderChanges } from './changes'
 import { renderKnowledge } from './knowledge'
@@ -38,6 +38,10 @@ export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: 
   const settings = await io.get(S.settings)
   const boot = await io.get(S.boot)
   const stale = !!boot.installedVersion && isNewer(boot.installedVersion, MENTOR_VERSION)
+  // harmonogram animacji: na desktopie ruch robi CSS, w terminalu klatki tekstu
+  mentor.lastSurface = surface
+  const flash = await io.get(S.flash)
+  const flashOn = !!flash && flash.until > (await io.now())
   let body: RenderElement
   try {
     switch (tab) {
@@ -69,6 +73,11 @@ export async function renderPane(io: Host, E: El, surface: RenderSurface, cols: 
   return (
     <Box flexDirection="column">
       {stale && <Text color="warning" wrap="wrap">{`Zainstalowana jest nowsza wersja ${boot.installedVersion}, a ta sesja działa na ${MENTOR_VERSION}. Wpisz /reload-plugins albo otwórz nową sesję.`}</Text>}
+      {flashOn && (
+        <Text color={flash!.tone === 'ok' ? 'success' : 'error'} wrap="wrap">
+          {`${flash!.tone === 'ok' ? '✓' : '✗'} ${flash!.text}`}
+        </Text>
+      )}
       {settings.paused && <Text color="warning">Pauza: automatyczne lekcje wstrzymane (/mentor resume)</Text>}
       <Box flexDirection="row" flexWrap="nowrap" columnGap={1} alignItems="center" marginBottom={1}>
         {TABS.map(t => {

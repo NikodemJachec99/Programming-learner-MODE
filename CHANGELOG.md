@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.4.1
+
+### Change Lab
+
+- Na górze ostatnie zadanie jednym zdaniem: polecenie, liczba zmian i plików, dodane i usunięte linie, nieudane.
+- Lista zmian: każde polecenie to karta z czasem i podsumowaniem („17 edycji w 14 plikach +1007 −4”), a w niej każdy plik raz, z ikoną typu, katalogiem, liczbą edycji (×5) i sumą linii. Kliknięcie otwiera ostatnią edycję pliku. Długie karty pokazują 8 plików i „+ N plików więcej”. Pojęcia są w szczegółach zmiany, nie w liście.
+- Gdy katalog projektu nie jest repozytorium (folder z wieloma worktree), gałąź i status gita są z repozytorium pliku, którego Claude dotknął ostatnio, z nazwą tego repozytorium przy gałęzi.
+- Pliki jak w claude-code-filetree. W Zmianach karta „Teraz” (co Claude robi w tej chwili: myśli, czyta, edytuje, uruchamia komendę; ile plików otworzył i zmienił; gałąź i jej stan; legenda kolorów) i lista „Claude dotknął” z plakietkami Otwarty, Edytowany, Zacommitowany, Błąd, Odrzucony. Nazwa czytanego albo edytowanego pliku mieni się (shimmer). Kliknięcie pliku otwiera jego zmianę.
+- Boczny panel „Pliki” (`/mentor-files` albo „Wszystkie pliki →”): karta Teraz, szukanie, Odśwież, Zwiń wszystko, ukryte pliki, Claude dotknął, a niżej całe drzewo projektu z ikonami typów, statusem gita (M, U, D), godziną zmiany i zielonym wierszem pliku, który wszedł commitem Claude; na dole „zacommitowane a1c9e42”. Katalogi wczytywane na żądanie, droga do dotkniętych plików rozwinięta sama, jeden `git status` na odświeżenie po edycji albo komendzie, nie przy każdym rysowaniu.
+- Szczegóły zmiany jak w Replay Theater: „4 edycje w 3 plikach”, „6 linii dodanych, 6 usuniętych”, „Edycje po kolei” z kółkami na linii (zrobione ✓, bieżąca różowa z numerem, następne obrysowane, katalog i +/−), „Edycja 4 z 4”, plik i ścieżka. Diff w ramce pokazuje same zmiany i zaznacza zmienione słowa mocniejszym tłem, pod nim legenda i przyciski „Poprzednia edycja” i „Następna edycja” (klawisze `p` i `n`).
+- Diff najpierw skrócony (zmiany z 1 linią kontekstu), cały na żądanie. W szerokim panelu widok „Obok”.
+- Laboratorium: szybka zmiana operatora z listy i wartości wpisywanej wprost, „⏭ pokaż od razu” zamiast czekania na animację, wyniki liczone raz i zapamiętane.
+- Karta decyzji przed poproszeniem Claude o inne podejście: zmiana, podejście, co zachować, różnice ze źródłem (symulator albo propozycja AI), co sprawdzić, co niepewne. Domyślnie „Anuluj”, polecenie zawiera te same sekcje.
+
+### Nauka
+
+- Pod lekcją „Jak było?”: za proste, za trudne, więcej przykładów, dalej nie rozumiem. Jeden głos na lekcję, liczony na pojęcie, projekt i globalnie. Wpływa na sposób pisania kolejnych lekcji (i szczegółowość lekcji wbudowanych), nigdy na poziom wiedzy. „Więcej przykładów” i „dalej nie rozumiem” od razu dają przykład albo wyjaśnienie z innej strony. Bez dodatkowych wywołań modelu poza tymi dwoma i bez zmian w instrukcjach Claude.
+
+### Agenci i kraby
+
+- Boczny panel „Agenci” jak w savvy-progress: tytuł zadania, kafelki koszt (szacunek z cennika), tokeny i czas, sekcje Pracują i Skończeni (zwijane), widok zwinięty z rzędem krabów, pod spodem zadania w tle. Każdy subagent: krab w kostiumie roli, zadanie, rola, model i effort, co robi teraz („edytuje forms/register.ts”), kontekst w %, tokeny, koszt, czas i znacznik stanu. Otwiera się sam raz na turę (gdy autootwieranie jest włączone), `/mentor-agents` i ×N w pasku go pokazują albo chowają.
+- Nad promptem pasek zadania jak w savvy-progress przy każdym poleceniu: tytuł z pierwszej linii promptu, pasek z migoczących pikseli, pigułka, krab i ✕ (chowa do następnego polecenia). Bez agentów w trakcie pracy po pasku jedzie pasmo pikseli, pigułka mówi „Myśli…” albo „Pracuje · 7 kroków · 2 pliki”, po prawej czas; po odpowiedzi zielony pasek „Gotowe · +42 −10”. Krab ubiera się w to, co Claude robi: detektyw z lupą przy czytaniu i szukaniu, inżynier z kluczem przy edycji, wyścigowiec przy komendach, astronauta w sieci. Z subagentami pigułka „Agenci k/n”, procent i ×N. Obok treści innych modów.
+- Krab i 6 kostiumów z savvy-progress: Explore pirat, Plan detektyw, zwykły agent inżynier, przewodnik astronauta, szybkie zadania wyścigowiec, kucharz. Chodzi i rusza rekwizytem, gdy agent pracuje.
+- W Zmianach skrót: rząd krabów, podsumowanie i przycisk do panelu.
+- Boczny panel „Zadania w tle” (`/mentor-tasks`, otwiera się sam raz na turę przy pierwszym zadaniu): kafelki Pracują, Skończone, Czas razem; sekcja Pracują z animowanym wierszem, „▸ wyjście” rozwija ostatnie 30 linii, „■ Zatrzymaj” wywołuje TaskStop dopiero po kliknięciu; zwijana sekcja Skończone ze znacznikiem ✓ ✗ ⊘, stanem i czasem. W Zmianach i w panelu agentów skrót z przyciskiem do panelu. Natywnego panelu Background tasks mod nie może przerysować, więc to osobny panel.
+- Zadania w tle (komendy Bash uruchomione w tle): opis, komenda, czas, ostatnie 4 linie wyjścia na żywo i stan końcowy. Na desktopie wiersz z ikoną terminala z mrugającym kursorem, paskiem „trwa” i pulsującą najnowszą linią. Wyjście czytane co 2 s (rzadziej przy dużym), bez kodów kolorów i po redakcji sekretów; koniec z powiadomienia o zadaniu albo z TaskStop.
+- Dane wyłącznie z `agent.spawn`, `turn.step`, `tool.call` z `agentId` i `turn.complete`; zdarzenia przechodzą bez zmian.
+
+### Wygląd i animacje
+
+- Shimmer z claude-code-filetree: po nazwie pliku, którego Claude dotyka, przesuwa się pasmo światła (fiolet odczyt, pomarańcz edycja, zieleń świeżo zmieniony). Przy plikach liczniki `+dodane −usunięte` z tej tury.
+- Pasek postępu z migoczących pikseli z pigułką etykiety (savvy-progress) w odtwarzaniu Symulatora i w laboratorium.
+- Pogoda kontekstu w pasku nad promptem (token-weather): ☀ pogodnie, ☁ pochmurno, ☂ przelotnie, ☇ burzowo, ↯ pełno.
+- Licencje zapożyczeń: THIRD_PARTY_NOTICES.md.
+- Jedna paleta w całym panelu: zielony dodane i sukces, czerwony usunięte i błąd, pomarańczowy edycja, fioletowy odczyt i analiza.
+- Na desktopie znaczniki stanu i oczekiwanie to małe SVG animowane przez CSS (z `prefers-reduced-motion`), bez przerysowań panelu. W terminalu tekstowe odpowiedniki.
+- Jeden harmonogram dla całego ruchu (odtwarzanie, laboratorium, błyski plików, oczekiwanie w terminalu, potwierdzenia) zamiast osobnych pętli. Śpi do najbliższej zmiany i kończy się, gdy nic się nie rusza. Odtwarzanie zatrzymuje się po zmianie zakładki.
+- Krótkie potwierdzenia na górze panelu, np. po wstawieniu polecenia albo zapisaniu oceny lekcji.
+
+### Pasek kontekstu
+
+- Trend 12 ostatnich tur i zmiana względem poprzedniej tury. Historia przeżywa przeładowanie moda.
+- W wąskim oknie znika najpierw trend, potem zmiana tury, na końcu licznik cache.
+- Mentor dokłada pasek do treści innych modów nad promptem zamiast ją zastępować.
+
+### Prywatność
+
+- Polecenia Bash w opisach błędów i nagłówki `Authorization: Bearer` przechodzą przez redakcję.
+- Jednorazowe czyszczenie starej historii (opisy zmian, polecenia, obserwacje) z kopią bazy przed zapisem. Historia wczytana do panelu jest czyszczona także w pamięci.
+
 ## 1.4.0
 
 ### Laboratorium w Zmianach

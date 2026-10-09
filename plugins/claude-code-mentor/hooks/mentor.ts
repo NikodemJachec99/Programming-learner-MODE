@@ -31,10 +31,17 @@ import { builtinLesson, extractJson, lessonRequest, levelName, mergeModelLesson 
 import type { LessonInput } from './engine/lessons'
 import { changeQuestion } from './engine/changequiz'
 import { PLACEMENT } from './engine/placement'
+import { decisionFor, decisionPrompt } from './engine/decision'
+import { applyFeedback, detailFor, EMPTY_FEEDBACK, FEEDBACK_LABEL, lessonPrefs, parseFeedback } from './engine/feedback'
+import type { FeedbackKind, FeedbackStore } from './engine/feedback'
 import { caseStatement, nextVariantId } from './engine/bench'
 import type { Example } from './engine/examples'
 import { pairCall } from './sim/autocall'
 import { simTotal } from './ui/simcache'
+import { nextChange } from './engine/activity'
+import { nextRead, withOutput } from './engine/tasks'
+import { ancestors, inside, join as joinFs, parentOf, parseStatus, pkey, posix } from './engine/files'
+import type { FsItem, GitView } from './engine/files'
 import { boundaryQuestion, fromTemplate, gradeChoice, gradeRequest, parseGrade, parseQuiz, predictOutputQuestion, quizRequest } from './engine/quiz'
 import type { Built, Grade } from './engine/quiz'
 import { isSensitivePath, redact, redactLines, safeSnippet } from './engine/redact'
@@ -56,6 +63,14 @@ export const conceptById = (id: string): ConceptDef | undefined => BY_ID.get(id)
  * najbardziej zaawansowane najpierw. Gdy nic nie zostaje: pusta lista do pokazania w panelu,
  * a z `fallback` pierwsze pojęcie z listy (lekcja i ćwiczenie muszą mieć o czym być).
  */
+/** Zmiana z historii z tekstami po redakcji (opis, polecenie, fakty). */
+export const cleanMeta = <T extends { summary: string; turnLabel: string | null; facts: string[] }>(m: T): T => ({
+  ...m,
+  summary: redact(m.summary ?? '').text,
+  turnLabel: m.turnLabel ? redact(m.turnLabel).text : m.turnLabel,
+  facts: (m.facts ?? []).map(f => redact(f).text),
+})
+
 export function interestingConcepts(ids: readonly string[], levels: Record<string, number>, fallback = false): string[] {
   const known = [...new Set(ids)].filter(id => BY_ID.has(id))
   const picked = known.filter(id => !BASIC_CONCEPTS.has(id) && (levels[id] ?? 0) < 3).sort((a, b) => (DEPTH.get(b) ?? 0) - (DEPTH.get(a) ?? 0))
@@ -102,7 +117,14 @@ export function suggestCall(code: string, unified: string, dialect: 'js' | 'dart
 
 /** Pauza między krokami odtwarzania w Symulatorze. */
 export const SPEED_MS = { slow: 8000, normal: 4000, fast: 1800 } as const
+/** Klatka spinnerów w terminalu i odstęp kroków animacji laboratorium. */
+export const FRAME_MS = 150
+export const BENCH_FRAME_MS = 800
+export const BENCH_FRAMES = 5
 export const SPEED_LABEL = { slow: 'wolno', normal: 'średnio', fast: 'szybko' } as const
+
+/** Katalogi pomijane przy szukaniu (jak PRUNE w filetree). */
+const PRUNE = new Set(['.git', 'node_modules', 'target', '.venv', '__pycache__', 'dist', '.next', 'build', '.dart_tool'])
 
 export class Mentor {
   ctx: DbCtx | null = null
@@ -113,6 +135,25 @@ export class Mentor {
   turn = 0
   private taskContext: string | null = null
   private turnLabel: string | null = null
+  /** Tura, w której zamknięto pasek zadania nad promptem (✕). */
+  flowDismissedTurn = -1
+  /** Praca bieżącego polecenia do paska zadania: start, koniec, wywołania narzędzi, linie +/−. */
+  work = { turn: -1, startedAt: 0, endedAt: null as number | null, steps: 0, added: 0, removed: 0, tool: '' }
+
+  /** Start pracy nad poleceniem (po onPrompt). */
+  startWork(at: number): void {
+    this.work = { turn: this.turn, startedAt: at, endedAt: null, steps: 0, added: 0, removed: 0, tool: '' }
+  }
+
+  /** Jedno wywołanie narzędzia w tej turze (Claude albo subagent). */
+  workStep(tool: string): void {
+    if (this.work.turn === this.turn && this.work.endedAt === null) this.work = { ...this.work, steps: this.work.steps + 1, tool }
+  }
+
+  /** Koniec odpowiedzi głównej rozmowy. */
+  endWork(at: number): void {
+    if (this.work.turn === this.turn && this.work.endedAt === null) this.work = { ...this.work, endedAt: at }
+  }
   private lastChange: ChangeFull | null = null
   private changeCache = new Map<string, ChangeFull>()
   private turnObs: MentorObservation[] = []
@@ -143,6 +184,7 @@ export class Mentor {
     const dataDir = (await io.dataDir()) ?? ''
     void this.checkVersion(io)
     void this.loadPlacement(io)
+    void this.loadFeedback(io)
     const posix = dataDir.startsWith('/')
     const engine = await io.version().catch(() => '?')
     // Kandydaci na node.exe: z instalatora (prawdziwa ścieżka przed linkami nvm),
@@ -228,17 +270,41 @@ export class Mentor {
       await io.set(S.lessons, () => v.recentLessons.map(toMeta))
       const hist = res[3]
       if (hist?.ok && Array.isArray(hist.value)) {
-        const saved = hist.value as ChangeMeta[]
+        // historia mogła powstać przed poprawką redakcji: w pamięci zawsze czyste teksty
+        const saved = (hist.value as ChangeMeta[]).map(cleanMeta)
         await io.set(S.changes, live => [...live, ...saved.filter(x => !live.some(y => y.id === x.id))].slice(0, 120))
       }
       await this.applyUsage(io, v.usageToday)
       const schema = (init.value as { schemaVersion: number }).schemaVersion
       await io.set(S.boot, b => ({ ...b, status: 'ready' as const, schemaVersion: schema, messages }))
+      void this.scrubHistory(io).catch(() => undefined)
     } catch (e) {
       messages.push(`Baza niedostępna: ${errText(e)}. Mentor działa w trybie awaryjnym: zapisy trafiają do bufora i zostaną dosłane.`)
       const pending = await pendingCount(io)
       await io.set(S.boot, b => ({ ...b, status: 'degraded' as const, messages, pending }))
     }
+  }
+
+  /**
+   * Jednorazowo (flaga w $.store): stare opisy zmian, polecenia i obserwacje przechodzą przez
+   * redakcję. Kopia bazy przed zapisem; zmieniane są tylko rekordy, w których coś usunięto.
+   */
+  async scrubHistory(io: Host): Promise<{ changes: number; observations: number } | null> {
+    if (!this.ctx || (await io.storeGet('scrub-v1').catch(() => null))) return null
+    const scan = await one<{ changes: { id: string; summary: string | null; turnLabel: string | null; facts: string[] | null }[]; observations: { id: number; summary: string | null }[] }>(io, this.ctx, 'scrubScan', {})
+    const clean = (t: string | null) => (t == null ? t : redact(t).text)
+    const changes = scan.changes
+      .map(c => ({ id: c.id, summary: clean(c.summary), turnLabel: clean(c.turnLabel), facts: c.facts?.map(f => redact(f).text) ?? null, was: c }))
+      .filter(c => c.summary !== c.was.summary || c.turnLabel !== c.was.turnLabel || JSON.stringify(c.facts) !== JSON.stringify(c.was.facts))
+      .map(({ was: _was, ...c }) => c)
+    const observations = scan.observations.map(o => ({ id: o.id, summary: clean(o.summary) })).filter((o, i) => o.summary !== scan.observations[i]!.summary)
+    if (changes.length || observations.length) {
+      await one(io, this.ctx, 'backup', { keep: 10 })
+      await one(io, this.ctx, 'scrubApply', { changes, observations })
+    }
+    const result = { changes: changes.length, observations: observations.length }
+    await io.storeSet('scrub-v1', { ...result, at: await io.now() })
+    return result
   }
 
   private async loadBaseline(io: Host, root: string): Promise<void> {
@@ -318,6 +384,141 @@ export class Mentor {
     this.turnLabel = first ? (first.length > 90 ? first.slice(0, 89) + '…' : first) : null
   }
 
+  // ---------- pliki projektu (wzorzec claude-code-filetree) ----------
+
+  private filesBusy = false
+  private filesAgain = false
+  private filesTimer = false
+  /** Korzeń repozytorium dla katalogu (null: poza gitem); raz na katalog. */
+  private repoTops = new Map<string, string | null>()
+
+  private async repoTop(io: Host, dir: string): Promise<string | null> {
+    const k = pkey(dir)
+    if (this.repoTops.has(k)) return this.repoTops.get(k)!
+    const r = await io.run(['git', 'rev-parse', '--show-toplevel'], { cwd: dir, timeoutMs: 8000 }).catch(() => null)
+    const top = r && r.exitCode === 0 && r.stdout.trim() ? posix(r.stdout.trim()) : null
+    this.repoTops.set(k, top)
+    return top
+  }
+
+  /** Odświeża pliki: korzeń, rozwinięte katalogi i drogę do dotkniętych plików, jeden `git status`. */
+  async refreshFiles(io: Host): Promise<void> {
+    if (this.filesBusy) {
+      this.filesAgain = true
+      return
+    }
+    this.filesBusy = true
+    try {
+      do {
+        this.filesAgain = false
+        await this.loadFiles(io)
+      } while (this.filesAgain)
+    } catch {
+      /* pliki to podgląd: błąd odczytu nie może przeszkodzić w pracy */
+    } finally {
+      this.filesBusy = false
+    }
+  }
+
+  private async loadFiles(io: Host): Promise<void> {
+    const root = posix(this.projectRoot || (await io.sessionRoot().catch(() => '')))
+    if (!root || root === '/') return
+    const f0 = await io.get(S.files)
+    const same = pkey(f0.root) === pkey(root)
+    const act = await io.get(S.activity)
+    // droga do każdego dotkniętego pliku jest rozwinięta (filetree: reveal)
+    const reveal = act.files.flatMap(a => ancestors(root, a.path))
+    const seen = new Set<string>()
+    const expanded = [...(same ? f0.expanded : []), ...reveal].map(posix).filter(d => !seen.has(pkey(d)) && (seen.add(pkey(d)), true))
+    const listing: Record<string, FsItem[]> = {}
+    const list = async (d: string) => {
+      try {
+        listing[pkey(d)] = (await io.fsList(d)).map(e => ({ name: e.name, kind: e.kind, mtimeMs: e.mtimeMs, size: e.size }))
+      } catch {
+        /* katalog zniknął albo brak dostępu */
+      }
+    }
+    for (const d of [root, ...expanded].slice(0, 80)) await list(d)
+    // szukanie obejmuje też nierozwinięte katalogi: przejście wszerz z limitem, bez ciężkich katalogów
+    if (f0.query.trim()) {
+      const queue = Object.keys(listing).map(k => [...expanded, root].find(d => pkey(d) === k) ?? k)
+      for (let i = 0; i < queue.length && Object.keys(listing).length < 300; i++) {
+        for (const it of listing[pkey(queue[i]!)] ?? []) {
+          if (it.kind !== 'dir' || PRUNE.has(it.name)) continue
+          const p = joinFs(queue[i]!, it.name)
+          if (!listing[pkey(p)]) {
+            await list(p)
+            queue.push(p)
+          }
+        }
+      }
+    }
+    // repozytorium projektu, a gdy katalog projektu nim nie jest (np. folder z wieloma worktree),
+    // repozytorium pliku, którego Claude dotknął ostatnio
+    let top = await this.repoTop(io, root)
+    if (!top) {
+      const latest = [...act.files].sort((x, y) => y.at - x.at)[0]
+      if (latest) top = await this.repoTop(io, parentOf(latest.path))
+    }
+    const isRepo = !!top
+    let git: GitView | null = null
+    if (top) {
+      const st = await io.run(['git', 'status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], { cwd: top, timeoutMs: 15000 }).catch(() => null)
+      if (st && st.exitCode === 0) git = parseStatus(st.stdout, top)
+    }
+    const now = await io.now()
+    await io.set(S.files, f => ({ ...f, root, listing, expanded, isRepo, top: top ?? '', git: git ?? (isRepo && same && pkey(f.top) === pkey(top ?? '') ? f.git : null), loadedAt: now }))
+  }
+
+  /** Po edycji albo komendzie: jedno odświeżenie za chwilę dla kilku szybkich zmian. */
+  filesSoon(io: Host): void {
+    if (this.filesTimer) return
+    this.filesTimer = true
+    void io
+      .sleep(600)
+      .then(() => {
+        this.filesTimer = false
+        return this.refreshFiles(io)
+      })
+      .catch(() => {
+        this.filesTimer = false
+      })
+  }
+
+  /** Rozwija albo zwija katalog w drzewie. */
+  async toggleDir(io: Host, path: string): Promise<void> {
+    await io.set(S.files, f => ({ ...f, expanded: f.expanded.some(x => pkey(x) === pkey(path)) ? f.expanded.filter(x => !inside(path, x)) : [...f.expanded, posix(path)] }))
+    // odświeżenie w tle: kliknięcie nie czeka na dysk i gita (limit czasu przycisku)
+    void this.refreshFiles(io)
+  }
+
+  /** Szukanie w drzewie: filtr nazw, z doczytaniem nierozwiniętych katalogów. */
+  async searchFiles(io: Host, query: string): Promise<void> {
+    await io.set(S.files, f => ({ ...f, query }))
+    void this.refreshFiles(io)
+  }
+
+  /** Udany `git commit` Claude: skrót commita i pliki tej tury, które nim weszły (po commicie czyste). */
+  async noteCommit(io: Host): Promise<void> {
+    await this.refreshFiles(io)
+    const f0 = await io.get(S.files)
+    const root = f0.top || f0.root || posix(this.projectRoot)
+    if (!root) return
+    const r = await io.run(['git', 'rev-parse', '--short', 'HEAD'], { cwd: root, timeoutMs: 8000 }).catch(() => null)
+    if (!r || r.exitCode !== 0) return
+    await this.refreshFiles(io)
+    const f = await io.get(S.files)
+    const act = await io.get(S.activity)
+    const files = act.files.filter(a => a.edits > 0 && !f.git?.files[pkey(a.path)]).map(a => a.path)
+    const at = await io.now()
+    await io.set(S.files, x => ({ ...x, commit: { sha: r.stdout.trim(), files, at } }))
+  }
+
+  /** Pierwsza linia bieżącego polecenia (po redakcji), tytuł paska i panelu agentów. */
+  turnTitle(): string | null {
+    return this.turnLabel
+  }
+
   /** Po wykonaniu narzędzia. Nie zmienia wyniku; błędy połyka. */
   async onTool(io: Host, tool: string, input: Record<string, unknown>, ran: { isError?: true; deny?: string; result?: unknown; text?: string }): Promise<void> {
     if (this.settings.paused) return
@@ -330,6 +531,7 @@ export class Mentor {
     if (change) await this.addChange(io, change)
     if (!obs) return
     this.turnObs.push(obs)
+    if (this.work.turn === this.turn && (obs.kind === 'edit' || obs.kind === 'create')) this.work = { ...this.work, added: this.work.added + obs.added, removed: this.work.removed + obs.removed }
     if (obs.file) this.touchedSince.add(norm(obs.file))
     await io.set(S.feed, f => [obs!, ...f].slice(0, 40))
   }
@@ -463,15 +665,19 @@ export class Mentor {
       return
     }
     await io.set(S.lab, l => ({ ...l, loading: true }))
-    try {
-      const full = await one<ChangeFull | null>(io, this.ctx, 'getChange', { id })
-      if (full) this.changeCache.set(id, { ...full, before: full.before ?? null, after: full.after ?? null, unified: full.unified ?? '' })
-      else await io.set(S.lab, l => ({ ...l, error: 'Tej zmiany nie ma już w historii (limit 400 zmian albo 60 dni).' }))
-    } catch (e) {
-      await io.set(S.lab, l => ({ ...l, error: `Nie udało się wczytać zmiany: ${errText(e)}` }))
-    } finally {
-      await io.set(S.lab, l => ({ ...l, loading: false }))
-    }
+    // odczyt z bazy w tle: kliknięcie od razu pokazuje szczegóły („Wczytuję kod…”), nie czeka na bazę
+    const ctx = this.ctx
+    void (async () => {
+      try {
+        const full = await one<ChangeFull | null>(io, ctx, 'getChange', { id })
+        if (full) this.changeCache.set(id, { ...full, before: full.before ?? null, after: full.after ?? null, unified: full.unified ?? '' })
+        else await io.set(S.lab, l => ({ ...l, error: 'Tej zmiany nie ma już w historii (limit 400 zmian albo 60 dni).' }))
+      } catch (e) {
+        await io.set(S.lab, l => ({ ...l, error: `Nie udało się wczytać zmiany: ${errText(e)}` }))
+      } finally {
+        await io.set(S.lab, l => ({ ...l, loading: false }))
+      }
+    })()
   }
 
   /**
@@ -492,10 +698,112 @@ export class Mentor {
     const shared = c.before ? pairCall(c.before, c.after, dialect) : null
     const cases = [...new Set([fromDiff.call ? fromDiff.hint : '', shared?.call ? shared.label ?? '' : ''].filter(Boolean))].slice(0, 3)
     await io.set(S.lab, l => ({ ...l, bench: { forId: id, variants, cases, sel: variants[variants.length - 1]!.id, line: 1, error: null, handed: null, reveal: cases.length ? 0 : undefined, frame: 0 } }))
-    if (cases.length) void this.animateBench(io, cases.length * variants.length)
+    if (cases.length) await this.animateBench(io)
   }
 
-  private animToken = 0
+  // ===================== animacje: jeden harmonogram =====================
+  // Jedna pętla dla wszystkiego, co się rusza: odtwarzanie w Symulatorze, odsłanianie wyników
+  // laboratorium, błyski plików, oczekiwanie na lekcję i krótkie potwierdzenia. Śpi dokładnie do
+  // najbliższej zmiany; gdy nic się nie rusza, kończy się i nie zostawia żadnego timera.
+
+  /** Licznik klatek (spinnery w terminalu). */
+  frame = 0
+  /** Powierzchnia, na której panel był ostatnio rysowany (na desktopie ruch robi CSS w SVG). */
+  lastSurface: string | null = null
+  private animIo: Host | null = null
+  private animRunning = false
+  private simNextAt = 0
+  private benchNextAt = 0
+  /** Ile razy pętla obudziła się, żeby przerysować (do pomiarów i testów). */
+  animTicks = 0
+
+  /** Budzi harmonogram, jeśli śpi. */
+  wake(io: Host): void {
+    this.animIo = io
+    if (!this.animRunning) void this.animLoop().catch(() => undefined)
+  }
+
+  private async animLoop(): Promise<void> {
+    this.animRunning = true
+    try {
+      // bezpiecznik: żadna animacja nie trwa dłużej niż kilka tysięcy kroków
+      for (let guard = 0; guard < 20_000; guard++) {
+        const io = this.animIo
+        if (!io) break
+        const now = await io.now()
+        const due = await this.animDue(io, now)
+        if (due === null) break
+        if (!(await io.sleep(Math.max(40, due - now)))) break
+        // krok liczy się co najmniej do zaplanowanej chwili (zegar bez sesji stoi w miejscu)
+        await this.animStep(io, Math.max(due, await io.now()))
+      }
+    } finally {
+      this.animRunning = false
+    }
+  }
+
+  private async animDue(io: Host, now: number): Promise<number | null> {
+    const due: number[] = []
+    // w terminalu błysk pliku to shimmer z klatek; na desktopie robi go CSS
+    const a = nextChange(await io.get(S.activity), now, FRAME_MS, this.lastSurface === 'terminal')
+    if (a !== null) due.push(a)
+    // pracujący subagenci i zadania w tle: licznik czasu raz na sekundę, wyjście zadań co kilka sekund
+    const tasks = await io.get(S.tasks)
+    const working = this.work.turn === this.turn && this.work.startedAt > 0 && this.work.endedAt === null
+    if (working || (await io.get(S.agents)).some(x => x.status === 'running') || tasks.some(t => t.status === 'running')) due.push(now + 1000)
+    const read = nextRead(tasks)
+    if (read !== null) due.push(read)
+    if ((await io.get(S.sim)).playing) due.push(this.simNextAt)
+    if ((await io.get(S.lab)).bench?.reveal !== undefined) due.push(this.benchNextAt)
+    const job = await io.get(S.job)
+    // terminal nie ma CSS: spinner oczekiwania na lekcję to klatki tekstu
+    if ((job.state === 'working' || job.state === 'queued') && this.lastSurface === 'terminal') due.push(now + 400)
+    const flash = await io.get(S.flash)
+    if (flash && flash.until > now) due.push(flash.until)
+    return due.length ? Math.min(...due) : null
+  }
+
+  private async animStep(io: Host, now: number): Promise<void> {
+    this.frame++
+    this.animTicks++
+    const sim = await io.get(S.sim)
+    if (sim.playing && now >= this.simNextAt - 5) {
+      const total = simTotal(sim)
+      // odtwarzanie żyje tylko na widocznej zakładce Symulatora
+      if ((await io.get(S.tab)) !== 'sim' || sim.cursor >= total - 1) await io.set(S.sim, s => ({ ...s, playing: false }))
+      else {
+        await io.set(S.sim, s => ({ ...s, cursor: Math.min(total - 1, s.cursor + 1), playing: s.cursor + 1 < total - 1 }))
+        this.simNextAt = now + SPEED_MS[sim.speed ?? 'slow']
+      }
+    }
+    // ostatnie linie wyjścia zadań w tle (tylko te, którym minął odstęp)
+    for (const t of await io.get(S.tasks)) {
+      if (t.status === 'running' && t.outputFile && now >= t.nextReadAt - 5) await this.readTask(io, t.id)
+    }
+    const b = (await io.get(S.lab)).bench
+    if (b?.reveal !== undefined && now >= this.benchNextAt - 5) {
+      const cells = b.cases.length * b.variants.length
+      const f = (b.frame ?? 0) + 1
+      const reveal = f >= BENCH_FRAMES ? b.reveal + 1 : b.reveal
+      await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: reveal >= cells ? undefined : reveal, frame: f >= BENCH_FRAMES ? 0 : f } } : l))
+      this.benchNextAt = now + BENCH_FRAME_MS
+    }
+    io.invalidate()
+  }
+
+  /** Odczyt wyjścia zadania w tle (ostatnie linie, po redakcji). Błąd odczytu tylko odsuwa następną próbę. */
+  async readTask(io: Host, id: string, file?: string): Promise<void> {
+    const t = (await io.get(S.tasks)).find(x => x.id === id)
+    const path = file ?? t?.outputFile
+    if (!t || !path) return
+    const now = await io.now()
+    try {
+      const text = await io.fsRead(path)
+      await io.set(S.tasks, list => withOutput(list, id, text, now).map(x => (x.id === id && !x.outputFile ? { ...x, outputFile: path } : x)))
+    } catch {
+      await io.set(S.tasks, list => list.map(x => (x.id === id ? { ...x, nextReadAt: now + 10_000 } : x)))
+    }
+  }
 
   /** Zmiana tempa działa od następnego kroku, także w trakcie odtwarzania. */
   async cycleSpeed(io: Host): Promise<void> {
@@ -504,45 +812,40 @@ export class Mentor {
 
   /**
    * Animacja uruchomienia laboratorium: komórki wyniku odsłaniają się po kolei, a liczona
-   * pokazuje, którą linię właśnie wykonuje. Nowe uruchomienie albo zamknięcie przerywa starą.
+   * pokazuje, którą linię właśnie wykonuje. Wyniki są policzone od razu; animacja tylko je odsłania.
    */
-  async animateBench(io: Host, cells: number, frames = 5): Promise<void> {
-    const token = ++this.animToken
-    const alive = async () => token === this.animToken && !!(await io.get(S.lab)).bench
-    for (let idx = 0; idx < cells; idx++) {
-      for (let f = 0; f < frames; f++) {
-        if (!(await alive())) return
-        await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: idx, frame: f } } : l))
-        if (!(await io.sleep(800))) return
-      }
-    }
-    if (await alive()) await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: undefined, frame: undefined } } : l))
+  async animateBench(io: Host): Promise<void> {
+    const b = (await io.get(S.lab)).bench
+    if (!b || !b.cases.length) return
+    await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: 0, frame: 0 } } : l))
+    this.benchNextAt = (await io.now()) + BENCH_FRAME_MS
+    this.wake(io)
+  }
+
+  /** „Pokaż od razu”: koniec animacji, wszystkie wyniki widoczne. */
+  async skipBench(io: Host): Promise<void> {
+    await io.set(S.lab, l => (l.bench ? { ...l, bench: { ...l.bench, reveal: undefined, frame: undefined } } : l))
   }
 
   /**
    * Odtwarzanie w Symulatorze: kursor idzie sam, krok po kroku. Tempo stałe na krok, żeby dało się
-   * śledzić linię, zmienne i wyjście: wolno 8 s, średnio 4 s, szybko 1,8 s.
+   * śledzić linię, zmienne i wyjście: wolno 8 s, średnio 4 s, szybko 1,8 s. Drugie wywołanie to pauza.
    */
-  async playSim(io: Host, total?: number): Promise<void> {
+  async playSim(io: Host): Promise<void> {
     const sim = await io.get(S.sim)
     if (sim.playing) return void (await io.set(S.sim, s => ({ ...s, playing: false })))
-    total ??= simTotal(sim)
-    const token = ++this.animToken
+    const total = simTotal(sim)
+    if (total <= 1) return
     await io.set(S.sim, s => ({ ...s, playing: true, cursor: s.cursor >= total - 1 ? 0 : s.cursor }))
-    while (token === this.animToken) {
-      const s = await io.get(S.sim)
-      if (!s.playing) return
-      if (s.cursor >= total - 1) break
-      if (!(await io.sleep(SPEED_MS[(await io.get(S.sim)).speed ?? 'slow']))) return
-      if (token !== this.animToken || !(await io.get(S.sim)).playing) return
-      await io.set(S.sim, x => ({ ...x, cursor: Math.min(total - 1, x.cursor + 1) }))
-    }
-    if (token === this.animToken) await io.set(S.sim, s => ({ ...s, playing: false }))
+    this.simNextAt = (await io.now()) + SPEED_MS[sim.speed ?? 'slow']
+    this.wake(io)
   }
 
-  /** Zatrzymuje odtwarzanie (każdy ręczny ruch kursora). */
-  stopPlay(): void {
-    this.animToken++
+  /** Krótkie potwierdzenie (sukces albo błąd) na górze panelu; znika samo. */
+  async flash(io: Host, text: string, tone: 'ok' | 'error' = 'ok', ms = 2600): Promise<void> {
+    const now = await io.now()
+    await io.set(S.flash, () => ({ text, tone, until: now + ms }))
+    this.wake(io)
   }
 
   /** Alternatywa od modelu jako kolejna wersja w laboratorium tej zmiany. */
@@ -563,7 +866,6 @@ export class Mentor {
   /** Przykład do nauki w Symulatorze: para A/B (przed i po przeróbce) albo jeden kod. */
   async showExample(io: Host, ex: Example): Promise<void> {
     const pair = ex.before ? { a: ex.before, b: ex.code, aStart: 1, bStart: 1, aLabel: 'przed', bLabel: 'po', hint: '' } : null
-    this.stopPlay()
     await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect: ex.dialect, source: ex.code, origin: `przykład: ${ex.label}`, note: ex.note, pair, edits: [], cursor: 0, variant: (pair ? 'B' : 'A') as 'A' | 'B', panel: 'state' as const, callArgs: '', playing: false }))
     await io.set(S.tab, () => 'sim' as MentorTab)
     // przykład od razu się odtwarza, drzewo widgetów nie ma kroków
@@ -577,7 +879,6 @@ export class Mentor {
     const c = b ? this.changeCache.get(b.forId) : undefined
     const v = b?.variants.find(x => x.id === b.sel)
     if (!b || !c || !v) return
-    this.stopPlay()
     const dialect = simDialect(c.lang) ?? 'js'
     const call = b.cases[caseIndex]
     await io.set(S.sim, s => ({ ...s, mode: 'js' as const, dialect, source: v.code, origin: `${c.file}: ${v.id} ${v.label}`, note: undefined, playing: false, pair: null, edits: [], cursor: 0, variant: 'A' as const, panel: 'state' as const, callArgs: call ? caseStatement(call, dialect) : '' }))
@@ -664,15 +965,12 @@ export class Mentor {
     const c = this.changeCache.get(id)
     const alt = (await io.get(S.lab)).alt.items[index]
     if (!c || !alt) return
-    const fence = '```'
-    const text = [
-      `W ${c.file}${c.line ? ` (okolice linii ${c.line})` : ''} przepisz ostatnią zmianę na podejście „${alt.title}”: ${alt.idea}`,
-      `Docelowy kod (propozycja, dopasuj do reszty pliku, ale nie zmieniaj podejścia):\n${fence}${c.lang}\n${redact(alt.code).text}\n${fence}`,
-      'Ograniczenia: zachowaj nazwę, parametry i zwracaną wartość funkcji oraz to, co widzą jej wywołujący. Nie ruszaj innych plików, chyba że bez tego kod się nie skompiluje.',
-      'Sprawdzenie: uruchom istniejące testy. Jeśli tej funkcji nic nie testuje, dopisz jeden test na przypadek, który obie wersje muszą obsłużyć tak samo, i pokaż wynik.',
-    ].join('\n\n')
+    // ta sama decyzja, którą użytkownik widział na karcie, idzie do Claude jako polecenie
+    const d = decisionFor(c, alt, (await io.get(S.lab)).bench)
+    const text = decisionPrompt(d, c.lang, redact(alt.code).text)
     const ok = await io.fillPrompt(text).catch(() => false)
     await io.set(S.lab, l => ({ ...l, confirm: null, handed: ok ? 'Prośba czeka w polu wiadomości. Popraw ją albo wyślij Enterem.' : `Nie mogę wpisać do pola wiadomości. Skopiuj i wyślij sam: ${text}` }))
+    if (ok) await this.flash(io, 'Polecenie czeka w polu wiadomości. Kod zmieni się dopiero po wysłaniu.')
   }
 
   private observeBash(input: Record<string, unknown>, ran: { isError?: true; deny?: string; text?: string }, now: number): MentorObservation | null {
@@ -684,14 +982,14 @@ export class Mentor {
     const key = cmd.trim().split(/\s+/).slice(0, 3).join(' ')
     const failed = !!ran.isError || ran.deny !== undefined
     const base: MentorObservation = {
-      id, ts: now, turn: this.turn, kind: f.kind, tool: 'Bash', file: null, line: null, summary: f.summary, added: 0, removed: 0, lang: 'sh',
+      id, ts: now, turn: this.turn, kind: f.kind, tool: 'Bash', file: null, line: null, summary: redact(f.summary).text, added: 0, removed: 0, lang: 'sh',
       concepts: f.concepts, symbols: f.packages, failed, blocked: false, preexisting: false,
     }
     if (failed) {
       this.failedCommands.set(key, { obsId: id, ts: now })
       this.touchedSince.clear()
       const firstErr = redact((ran.text ?? ran.deny ?? '').split(/\r?\n/).find(l => /error|fail|exception|cannot|not found|denied/i.test(l)) ?? (ran.text ?? '').split(/\r?\n/)[0] ?? '').text.slice(0, 180)
-      return { ...base, kind: 'error', summary: `Błąd: ${f.summary}${firstErr ? ` → ${firstErr}` : ''}`, concepts: [...new Set([...f.concepts, 'debugging'])] }
+      return { ...base, kind: 'error', summary: `Błąd: ${base.summary}${firstErr ? ` → ${firstErr}` : ''}`, concepts: [...new Set([...f.concepts, 'debugging'])] }
     }
     const prev = this.failedCommands.get(key)
     if (prev) {
@@ -847,8 +1145,10 @@ export class Mentor {
       missingPrereqs: missingPrereqs(c, levels, CONCEPTS),
       taskContext: job.task,
       claudeNote: job.note,
-      settings: this.settings,
+      // oceny poprzednich lekcji zmieniają sposób pisania, nigdy poziom wiedzy
+      settings: { ...this.settings, detail: detailFor(this.feedback, this.settings.detail as 'short' | 'normal' | 'deep', c.id, this.projectId) },
       deep: job.deep,
+      prefs: lessonPrefs(this.feedback, c.id, this.projectId),
     }
     let body = builtinLesson(input)
     let source: 'model' | 'builtin' = 'builtin'
@@ -864,7 +1164,7 @@ export class Mentor {
     if (allowModel && !this.breaker.open(now) && this.ctx) {
       const sendCode = this.settings.sendCode !== 'off' && !obs.blocked
       const req = lessonRequest(input, sendCode)
-      cacheKey = hash(`${c.id}|${d.snippet}|${this.settings.detail}|${job.deep}|${levels[c.id] ?? 0}|${this.settings.model}|${sendCode}`)
+      cacheKey = hash(`${c.id}|${d.snippet}|${input.settings.detail}|${job.deep}|${levels[c.id] ?? 0}|${this.settings.model}|${sendCode}|${(input.prefs ?? []).join('|')}`)
       const cached = await one<{ body: unknown } | Record<string, unknown> | null>(io, this.ctx, 'cacheGet', { key: cacheKey }).catch(() => null)
       if (cached && typeof cached === 'object') {
         body = mergeModelLesson(body, cached as Record<string, unknown>)
@@ -963,11 +1263,34 @@ export class Mentor {
    * Dopytanie pod lekcją: „co jest pod spodem” albo „inny przykład”. Dopisuje krótką odpowiedź
    * pod lekcją zamiast ją podmieniać. Bez AI daje treść z biblioteki i mówi dlaczego.
    */
-  async lessonFollowUp(io: Host, kind: 'under' | 'example'): Promise<void> {
+  // ===================== informacja zwrotna do lekcji =====================
+
+  /** Oceny lekcji (w pamięci; trwała kopia w $.store). */
+  feedback: FeedbackStore = EMPTY_FEEDBACK
+
+  private async loadFeedback(io: Host): Promise<void> {
+    this.feedback = parseFeedback(await io.storeGet('lesson-feedback').catch(() => null))
+  }
+
+  /** Głos ucznia o bieżącej lekcji: za proste, za trudne, więcej przykładów, dalej nie rozumiem. */
+  async lessonFeedback(io: Host, kind: FeedbackKind): Promise<void> {
+    const l = await io.get(S.lesson)
+    if (!l) return
+    const now = await io.now()
+    this.feedback = applyFeedback(this.feedback, { lessonId: l.id, conceptId: l.conceptIds[0] ?? null, projectId: this.projectId, kind, now })
+    await io.storeSet('lesson-feedback', this.feedback).catch(() => undefined)
+    io.invalidate()
+    // od razu coś, co pomaga: przykład albo inne wyjaśnienie; ocena trudności działa od następnej lekcji
+    if (kind === 'examples') return this.lessonFollowUp(io, 'example')
+    if (kind === 'confused') return this.lessonFollowUp(io, 'simpler')
+    await this.flash(io, `Zapamiętane (${FEEDBACK_LABEL[kind]}). Kolejne wyjaśnienia będą ${kind === 'hard' ? 'prostsze' : 'bardziej szczegółowe'}.`)
+  }
+
+  async lessonFollowUp(io: Host, kind: 'under' | 'example' | 'simpler'): Promise<void> {
     const l = await io.get(S.lesson)
     if (!l) return
     const c = BY_ID.get(l.conceptIds[0] ?? '')
-    const title = kind === 'under' ? 'Co jest pod spodem' : 'Inny przykład'
+    const title = kind === 'under' ? 'Co jest pod spodem' : kind === 'simpler' ? 'Jeszcze raz, prościej' : 'Inny przykład'
     const put = (f: { status: 'loading' | 'ready'; text: string; note?: string }) =>
       io.set(S.lesson, x => (x && x.id === l.id ? { ...x, followUps: [...(x.followUps ?? []).filter(y => y.kind !== kind), { kind, title, ...f }] } : x))
     await put({ status: 'loading', text: '' })
@@ -981,7 +1304,9 @@ export class Mentor {
       const name = c?.name ?? l.title
       const system = 'Jesteś mentorem programowania dla początkującego. Piszesz po polsku, prostymi zdaniami, w Markdown, bez wstępu i bez podsumowania, bez myślników jako interpunkcji.'
       const prompt =
-        kind === 'under'
+        kind === 'simpler'
+          ? `Pojęcie: ${name}.${code ? `\nKod ucznia:\n\`\`\`\n${code}\n\`\`\`` : ''}\nUczeń nadal nie rozumie poprzedniego wyjaśnienia. Wyjaśnij jeszcze raz z innej strony: najpierw analogia z codziennego życia (2 zdania), potem krok po kroku, co robi kod ucznia. Bez żargonu, a każdy termin objaśnij. Do 8 zdań.`
+          : kind === 'under'
           ? `Pojęcie: ${name}.${code ? `
 Kod ucznia:
 \`\`\`
@@ -998,7 +1323,7 @@ Pokaż inny, krótki przykład tego samego mechanizmu w innym kontekście (np. z
       if (!text) why = 'model jest niedostępny albo wyczerpał się dzienny limit'
     }
     if (text) return void (await put({ status: 'ready', text }))
-    const fallback = kind === 'under' ? (c?.mechanism ?? l.body.mechanism) : [c?.practice, c?.quiz.find(q => /```/.test(q.q))?.q].filter(Boolean).join(String.fromCharCode(10, 10))
+    const fallback = kind === 'simpler' ? (c?.intuition ?? l.body.observed) : kind === 'under' ? (c?.mechanism ?? l.body.mechanism) : [c?.practice, c?.quiz.find(q => /```/.test(q.q))?.q].filter(Boolean).join(String.fromCharCode(10, 10))
     await put({ status: 'ready', text: fallback || 'Brak treści w bibliotece dla tego pojęcia.', note: `Z biblioteki Mentora, bez AI: ${why}.` })
   }
 

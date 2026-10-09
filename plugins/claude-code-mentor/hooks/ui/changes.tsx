@@ -14,14 +14,19 @@ import type { Kit } from './kit'
 import { S } from './state'
 import { lessonBlock } from './lesson'
 import { renderBench } from './bench'
+import { fileIcon, renderFilesSummary } from './files'
+import { renderReplayDiff, renderReplayHead } from './replay'
+import { renderAgents } from './agents'
+import { renderTasks } from './tasks'
+import { waiting } from './motion'
+import { DECISION_SOURCE, decisionFor } from '../engine/decision'
+import type { DecisionLine } from '../engine/decision'
 import { exampleFor } from '../engine/examples'
 import { pairRunnable, runnable } from '../engine/runnable'
 import { PLACEMENT, placementSummary } from '../engine/placement'
 
 const FIRST_GROUPS = 6
 
-const icon = (c: ChangeMeta) => (c.status === 'failed' ? '✗' : c.status === 'blocked' ? '⊘' : c.kind === 'create' ? '＋' : '✎')
-const iconColor = (c: ChangeMeta) => (c.status === 'failed' ? 'error' : c.status === 'blocked' ? 'subtle' : c.kind === 'create' ? 'success' : 'suggestion')
 const conceptNames = (ids: string[], max = 2) =>
   ids
     .map(id => conceptById(id)?.name.replace(/\s*\(.*\)$/, ''))
@@ -116,12 +121,17 @@ async function renderList(io: Host, k: Kit, lab: MentorLab): Promise<RenderEleme
   const changes = await io.get(S.changes)
   const now = await io.now()
   const groups = groupByTurn(changes)
-  const levels = Object.fromEntries((await io.get(S.knowledge)).map(r => [r.id, r.level]))
   const start = await startCard(io, k, !groups.length)
+  const fileMap = await renderFilesSummary(io, k)
+  const agentsView = await renderAgents(io, k)
+  const tasksView = await renderTasks(io, k)
   if (!groups.length) {
     return (
       <Box flexDirection="column">
         <Text bold>Zmiany Claude</Text>
+        {agentsView}
+        {tasksView}
+        {fileMap}
         {start ?? (
           <Text dimColor wrap="wrap">
             Tu pojawi się każda zmiana, którą Claude zrobi w plikach. Kliknij ją, żeby zobaczyć kod przed i po, wyjaśnienie i uruchomienie obu wersji.
@@ -131,15 +141,31 @@ async function renderList(io: Host, k: Kit, lab: MentorLab): Promise<RenderEleme
     )
   }
   const shown = groups.slice(0, lab.showAll ? 30 : FIRST_GROUPS)
+  const openGroups = new Set((await io.get(S.view)).openSections)
   const focus = await io.get(S.focus)
   const fc = focus ? conceptById(focus.conceptId) : undefined
-  const fileWidth = Math.max(16, Math.min(48, k.cols - 26))
+  // ostatnie zadanie jednym zdaniem: co, ile zmian, ile plików, kiedy
+  const last = groups[0]!
+  const okItems = last.items.filter(c => c.status === 'ok')
+  const files = new Set(last.items.map(c => c.file)).size
+  const failed = last.items.length - okItems.length
   return (
     <Box flexDirection="column">
-      <Box flexDirection="row" justifyContent="space-between">
-        <Text bold>Zmiany Claude</Text>
-        <Text dimColor>kliknij plik</Text>
+      <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
+        <Text bold wrap="truncate-end">{last.label ? `„${last.label}”` : 'Zmiany Claude'}</Text>
+        <Box flexShrink={0}>
+          <Text dimColor>{ago(last.ts, now)}</Text>
+        </Box>
       </Box>
+      <Text wrap="wrap">
+        <Text>{`${okItems.length} ${okItems.length === 1 ? 'zmiana' : okItems.length < 5 && okItems.length > 1 ? 'zmiany' : 'zmian'} w ${files} ${files === 1 ? 'pliku' : 'plikach'}`}</Text>
+        <Text color="success">{`  +${okItems.reduce((s, c) => s + c.added, 0)}`}</Text>
+        <Text color="error">{` −${okItems.reduce((s, c) => s + c.removed, 0)}`}</Text>
+        {failed > 0 && <Text color="error">{`  · nieudane: ${failed}`}</Text>}
+      </Text>
+      {agentsView}
+      {tasksView}
+      {fileMap}
       {start}
       {fc && focus && (
         <Box flexDirection="row" columnGap={1} flexWrap="wrap">
@@ -148,37 +174,7 @@ async function renderList(io: Host, k: Kit, lab: MentorLab): Promise<RenderEleme
           {focus.file && <Text dimColor>{`w ${shortPath(focus.file, 32)}`}</Text>}
         </Box>
       )}
-      {shown.map(g => (
-        <Box key={`g-${g.key}`} flexDirection="column" marginTop={1}>
-          <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
-            <Text color="claude" wrap="truncate-end">
-              {g.label ? `„${g.label}”` : 'Bez polecenia'}
-            </Text>
-            <Box flexShrink={0}>
-              <Text dimColor>{ago(g.ts, now)}</Text>
-            </Box>
-          </Box>
-          {g.items.map(c => (
-            <Box key={`row-${c.id}`} flexDirection="row" columnGap={1} flexWrap="nowrap">
-              <Text color={iconColor(c)}>{icon(c)}</Text>
-              <Button key={`open-${c.id}`} plain onPress={() => mentor.openChange(io, c.id)}>
-                {shortPath(c.file || '(plik)', fileWidth)}
-              </Button>
-              {c.status === 'ok' ? (
-                <Text wrap="truncate-end">
-                  <Text color="success">{`+${c.added}`}</Text>
-                  <Text color="error">{` −${c.removed}`}</Text>
-                  <Text dimColor>{conceptNames(interestingConcepts(c.concepts, levels)).length ? `  ${conceptNames(interestingConcepts(c.concepts, levels)).join(', ')}` : ''}</Text>
-                </Text>
-              ) : (
-                <Text dimColor wrap="truncate-end">
-                  {c.status === 'failed' ? 'nie weszła do pliku' : 'plik wrażliwy, bez kodu'}
-                </Text>
-              )}
-            </Box>
-          ))}
-        </Box>
-      ))}
+      {shown.map(g => taskCard(io, k, g, now, openGroups))}
       {groups.length > FIRST_GROUPS && (
         <Box marginTop={1}>
           <Button key="lab-more" plain dimColor onPress={() => io.set(S.lab, l => ({ ...l, showAll: !l.showAll }))}>
@@ -190,8 +186,103 @@ async function renderList(io: Host, k: Kit, lab: MentorLab): Promise<RenderEleme
   )
 }
 
+const plural = (n: number, one: string, few: string, many: string) =>
+  n === 1 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many
+
+/** Pliki zadania: każdy raz, z liczbą edycji i sumą linii; kliknięcie otwiera ostatnią edycję pliku. */
+export function filesOfTask(items: readonly ChangeMeta[]): { file: string; last: ChangeMeta; count: number; added: number; removed: number; failed: number; ok: number }[] {
+  const by = new Map<string, { file: string; last: ChangeMeta; count: number; added: number; removed: number; failed: number; ok: number }>()
+  for (const c of items) {
+    const key = (c.file || '(plik)').replace(/\\/g, '/').toLowerCase()
+    const r = by.get(key) ?? { file: c.file || '(plik)', last: c, count: 0, added: 0, removed: 0, failed: 0, ok: 0 }
+    r.count++
+    if (c.status === 'ok') {
+      r.ok++
+      r.added += c.added
+      r.removed += c.removed
+    } else r.failed++
+    if (c.ts >= r.last.ts) r.last = c
+    by.set(key, r)
+  }
+  return [...by.values()]
+}
+
+const TASK_ROWS = 8
+
+/** Zadanie (jedno polecenie) jako karta: polecenie, czas, ile edycji i linii, potem pliki jak w filetree. */
+function taskCard(io: Host, k: Kit, g: { key: string; label: string | null; ts: number; items: ChangeMeta[] }, now: number, open: Set<string>): RenderElement {
+  const { Box, Text, Button } = k.E
+  const files = filesOfTask(g.items)
+  const added = files.reduce((s, f) => s + f.added, 0)
+  const removed = files.reduce((s, f) => s + f.removed, 0)
+  const failed = files.reduce((s, f) => s + f.failed, 0)
+  const all = open.has(`task-${g.key}`)
+  const shown = all ? files : files.slice(0, TASK_ROWS)
+  const dirOf = (p: string) => {
+    const parts = p.replace(/\\/g, '/').split('/').slice(0, -1).filter(Boolean)
+    const d = parts.join('/')
+    return d.length > 28 ? `…/${parts.slice(-2).join('/')}` : d
+  }
+  return (
+    <Box key={`g-${g.key}`} flexDirection="column" borderStyle="round" borderDimColor paddingX={1} marginTop={1}>
+      <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
+        <Text bold wrap="truncate-end">
+          {g.label ? `„${g.label}”` : 'Bez polecenia'}
+        </Text>
+        <Box flexShrink={0}>
+          <Text dimColor>{ago(g.ts, now)}</Text>
+        </Box>
+      </Box>
+      <Text>
+        <Text dimColor>{`${g.items.length} ${plural(g.items.length, 'edycja', 'edycje', 'edycji')} w ${files.length} ${files.length === 1 ? 'pliku' : 'plikach'}  `}</Text>
+        <Text color="success">{`+${added}`}</Text>
+        <Text color="error">{` −${removed}`}</Text>
+        {failed > 0 && <Text color="error">{`  · nieudane: ${failed}`}</Text>}
+      </Text>
+      <Box flexDirection="column" marginTop={1}>
+        {shown.map((f, i) => {
+          const name = f.file.replace(/\\/g, '/').split('/').pop() || f.file
+          const dir = dirOf(f.file)
+          return (
+            <Box key={`tf-${g.key}-${i}`} flexDirection="row" columnGap={1} alignItems="center">
+              {fileIcon(k.E, k.surface, name, `tf-i-${g.key}-${i}`)}
+              <Button key={`open-${f.last.id}`} plain onPress={() => mentor.openChange(io, f.last.id)}>
+                {name}
+              </Button>
+              {dir ? (
+                <Box flexShrink={1}>
+                  <Text dimColor wrap="truncate-start">
+                    {dir}
+                  </Text>
+                </Box>
+              ) : null}
+              <Box flexGrow={1} />
+              {f.count > 1 && <Text dimColor>{`×${f.count}`}</Text>}
+              {f.ok > 0 ? (
+                <Text>
+                  <Text color="success">{`+${f.added}`}</Text>
+                  <Text color="error">{` −${f.removed}`}</Text>
+                </Text>
+              ) : (
+                <Text color={f.last.status === 'failed' ? 'error' : undefined} dimColor={f.last.status !== 'failed'}>
+                  {f.last.status === 'failed' ? '✗ nie weszła' : '⊘ wrażliwy'}
+                </Text>
+              )}
+            </Box>
+          )
+        })}
+      </Box>
+      {files.length > TASK_ROWS && (
+        <Button key={`task-more-${g.key}`} plain dimColor onPress={() => io.set(S.view, v => ({ ...v, openSections: all ? v.openSections.filter(s => s !== `task-${g.key}`) : [...v.openSections, `task-${g.key}`] }))}>
+          {all ? 'Mniej' : `+ ${files.length - TASK_ROWS} ${plural(files.length - TASK_ROWS, 'plik', 'pliki', 'plików')} więcej`}
+        </Button>
+      )}
+    </Box>
+  )
+}
+
 async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promise<RenderElement> {
-  const { Box, Text, Button, Code } = k.E
+  const { Box, Text, Button } = k.E
   const now = await io.now()
   const meta = (await io.get(S.changes)).find(x => x.id === id)
   const c: ChangeFull | null = mentor.getChange(id)
@@ -210,15 +301,16 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
   const canRun = !!c?.after && !!sim && (c.before ? pairRunnable(c.before, c.after, sim) : runnable(c.after, sim))
   const view = lab.view === 'before' && !c?.before ? 'diff' : lab.view
 
+  const allChanges = await io.get(S.changes)
+  // wygląd Replay Theater: tura, edycje po kolei, „Edycja k z N”
   const header = (
     <Box flexDirection="column">
       {back}
-      <Text bold wrap="wrap">
-        {`${m.file}${m.line ? `:${m.line}` : ''}`}
-      </Text>
-      <Text dimColor wrap="wrap">
-        {[kindLabel, m.status === 'ok' ? `+${m.added} −${m.removed}` : null, ago(m.ts, now), m.turnLabel ? `„${m.turnLabel}”` : null].filter(Boolean).join('  ·  ')}
-      </Text>
+      {m.turnLabel ? (
+        <Text dimColor wrap="truncate-end">{`„${m.turnLabel}”  ·  ${ago(m.ts, now)}`}</Text>
+      ) : null}
+      {renderReplayHead(io, k, allChanges, m)}
+      {m.status !== 'ok' && <Text dimColor>{kindLabel}</Text>}
     </Box>
   )
 
@@ -280,8 +372,24 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
   } else if (!c || (!c.unified && !c.after)) {
     codeView = muted(k, 'Kod tej zmiany nie jest zapisany (wyłączone „Zapisuj kod zmian” albo starsza wersja Mentora).')
     provenance = ''
-  } else if (view === 'diff') {
-    codeView = c.unified ? <Code source={c.unified} format="diff" language={lang} path={m.file} wrap="wrap" /> : code(k, c.after ?? '', lang, c.afterStart, m.file)
+  } else if (view === 'split' && c.before && c.after) {
+    // szeroki panel: przed i po obok siebie
+    codeView = (
+      <Box flexDirection="row" columnGap={1}>
+        <Box flexDirection="column" width="50%">
+          <Text color="error" dimColor>przed</Text>
+          {code(k, c.before, lang, c.beforeStart, m.file)}
+        </Box>
+        <Box flexDirection="column" width="50%">
+          <Text color="success" dimColor>po</Text>
+          {code(k, c.after, lang, c.afterStart, m.file)}
+        </Box>
+      </Box>
+    )
+    provenance = 'Przed i po prosto z narzędzia Claude.'
+  } else if (view === 'diff' || view === 'split') {
+    // najpierw same zmiany ze zmienionymi słowami; kontekst i cały diff na żądanie (Replay Theater)
+    codeView = c.unified ? renderReplayDiff(io, k, allChanges, m, c.unified, !!lab.fullDiff) : code(k, c.after ?? '', lang, c.afterStart, m.file)
     provenance = c.unified ? 'Dokładny diff z narzędzia Claude.' : 'Cały nowy plik.'
   } else if (view === 'before') {
     codeView = code(k, c.before ?? '', lang, c.beforeStart, m.file)
@@ -311,7 +419,7 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
     </Box>
   ) : (
     <Box marginTop={1}>
-      {job.state === 'error' ? <Text color="warning" wrap="wrap">{job.message}</Text> : <Text color="suggestion" wrap="wrap">{job.state === 'working' || job.state === 'queued' ? `${job.message} Zwykle 10 do 30 s.` : 'Piszę wyjaśnienie…'}</Text>}
+      {job.state === 'error' ? <Text color="error" wrap="wrap">{`✗ ${job.message}`}</Text> : waiting(k, job.state === 'working' || job.state === 'queued' ? `${job.message} Zwykle 10 do 30 s.` : 'Piszę wyjaśnienie…', mentor.frame, 'lab-wait')}
     </Box>
   )
   const actions = (
@@ -353,6 +461,7 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
         {seg('diff', 'Zmiany', true)}
         {seg('before', 'Przed', !!c?.before)}
         {seg('after', 'Po', !!c?.after)}
+        {k.cols >= 110 && !!c?.before && !!c?.after && seg('split', 'Obok', true)}
       </Box>
       {codeView}
       {provenance ? muted(k, provenance) : null}
@@ -366,11 +475,61 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
   )
 }
 
+/**
+ * Karta decyzji przed poproszeniem Claude o inne podejście (wzorzec Blast Radius): czego dotyczy,
+ * co zachować, różnice ze źródłem (symulator / propozycja AI), testy i niepewności.
+ * Bezpieczny wybór ma fokus; nic się nie zmienia, dopóki polecenie nie zostanie wysłane.
+ */
+function decisionCard(io: Host, k: Kit, lab: MentorLab, id: string, i: number): RenderElement | null {
+  const { Box, Text, Button } = k.E
+  const c = mentor.getChange(id)
+  const alt = lab.alt.items[i]
+  if (!c || !alt) return null
+  const d = decisionFor(c, alt, lab.bench)
+  const row = (title: string, body: RenderElement | RenderElement[]) => (
+    <Box key={`dc-${title}`} flexDirection="row" columnGap={1}>
+      <Box width={12} flexShrink={0}>
+        <Text dimColor>{title}</Text>
+      </Box>
+      <Box flexDirection="column" flexShrink={1}>
+        {body}
+      </Box>
+    </Box>
+  )
+  const lines = (xs: DecisionLine[], key: string) =>
+    xs.map((x, j) => (
+      <Text key={`${key}-${j}`} wrap="wrap">
+        <Text>{x.text}</Text>
+        <Text color={x.source === 'sim' ? 'success' : x.source === 'ai' ? 'warning' : undefined} dimColor={x.source === 'none'}>{`  ${x.source === 'sim' ? '✓ ' : ''}${DECISION_SOURCE[x.source]}`}</Text>
+      </Text>
+    ))
+  return card(
+    k,
+    'warning',
+    <Text bold>{`⚠ Decyzja: przepisać zmianę na „${alt.title}”`}</Text>,
+    row('Zmiana', <Text wrap="truncate-start">{d.change}</Text>),
+    row('Podejście', <Text wrap="wrap">{d.approach}</Text>),
+    row('Zachowaj', lines(d.keep, 'dk')),
+    d.differences.length > 0 && row('Różnice', lines(d.differences, 'dd')),
+    row('Sprawdzenie', d.checks.map((x, j) => <Text key={`dt-${j}`} wrap="wrap">{`- ${x}`}</Text>)),
+    row('Niepewne', d.uncertain.map((x, j) => <Text key={`du-${j}`} dimColor wrap="wrap">{`? ${x}`}</Text>)),
+    <Text dimColor italic wrap="wrap">Wybranie podejścia nic nie zmienia. Wstawię to jako polecenie w pole wiadomości; kod zmieni się dopiero, gdy wyślesz je Enterem.</Text>,
+    <Box flexDirection="row" columnGap={1}>
+      <Button key={`alt-${i}-cancel`} autoFocus hotkey="1" onPress={() => io.set(S.lab, l => ({ ...l, confirm: null }))}>
+        Anuluj
+      </Button>
+      <Button key={`alt-${i}-go`} hotkey="2" onPress={() => mentor.handOff(io, id, i)}>
+        Wstaw polecenie dla Claude
+      </Button>
+    </Box>,
+  )
+}
+
 function renderAlternatives(io: Host, k: Kit, lab: MentorLab, id: string, langId: string): RenderElement | null {
   const { Box, Text, Button } = k.E
   const alt = lab.alt
   if (alt.forId !== id || alt.status === 'idle') return null
-  if (alt.status === 'loading') return <Box marginTop={1}>{muted(k, 'Szukam innego podejścia… (zapytanie AI, liczy się do dziennego limitu)')}</Box>
+  if (alt.status === 'loading') return <Box marginTop={1}>{waiting(k, 'Szukam innego podejścia… (zapytanie AI, liczy się do dziennego limitu)', mentor.frame, 'alt-wait')}</Box>
   if (alt.status === 'error') return <Box marginTop={1}><Text color="warning" wrap="wrap">{alt.message}</Text></Box>
   const sim = simDialect(langId)
   return (
@@ -390,19 +549,7 @@ function renderAlternatives(io: Host, k: Kit, lab: MentorLab, id: string, langId
           ))}
           {a.when && <Text dimColor wrap="wrap">{`Kiedy: ${a.when}`}</Text>}
           {lab.confirm === i ? (
-            card(
-              k,
-              'claude',
-              <Text wrap="wrap">Wstawię do pola wiadomości prośbę do Claude o to podejście. Kod się nie zmieni, dopóki nie wyślesz jej Enterem.</Text>,
-              <Box flexDirection="row" columnGap={1}>
-                <Button key={`alt-${i}-go`} variant="primary" onPress={() => mentor.handOff(io, id, i)}>
-                  Wstaw do pola wiadomości
-                </Button>
-                <Button key={`alt-${i}-cancel`} plain dimColor onPress={() => io.set(S.lab, l => ({ ...l, confirm: null }))}>
-                  Anuluj
-                </Button>
-              </Box>,
-            )
+            decisionCard(io, k, lab, id, i)
           ) : (
             <Box flexDirection="row" columnGap={1}>
               {sim && (

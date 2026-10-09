@@ -15,6 +15,8 @@ import { explainStep, whyStep } from '../sim/explain'
 import { OP_GROUPS, applyEdits, boundaryNote, compareRuns } from '../sim/variants'
 import { autoCall, looksLikeCall, pairCall } from '../sim/autocall'
 import { EXAMPLES } from '../engine/examples'
+import { pixelBarSvg } from './visuals'
+import type { Elements } from 'claude-code'
 import { card, md, muted, section } from './kit'
 import type { Kit } from './kit'
 import { DEFAULT_SIM, S } from './state'
@@ -37,7 +39,7 @@ export function progressBar(done: number, total: number, width = 16): string {
 function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean, variant: 'A' | 'B', paired: boolean, playing: boolean, speed: 'slow' | 'normal' | 'fast'): RenderElement {
   const { Box, Button, Text } = k.E
   // każdy ręczny ruch zatrzymuje odtwarzanie
-  const set = (fn: (s: MentorSimState) => MentorSimState) => () => (mentor.stopPlay(), io.set(S.sim, s => ({ ...fn(s), playing: false })))
+  const set = (fn: (s: MentorSimState) => MentorSimState) => () => io.set(S.sim, s => ({ ...fn(s), playing: false }))
   const clamp = (n: number) => Math.max(0, Math.min(total - 1, n))
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1} alignItems="center">
@@ -47,7 +49,7 @@ function controls(io: Host, k: Kit, total: number, cursor: number, hasB: boolean
       <Button key="sim-back" onPress={set(s => ({ ...s, cursor: clamp(s.cursor - 1) }))}>
         ◀
       </Button>
-      <Button key="sim-play" variant="primary" onPress={() => void mentor.playSim(io, total)}>
+      <Button key="sim-play" variant="primary" onPress={() => mentor.playSim(io)}>
         {playing ? '⏸ Pauza' : cursor >= total - 1 && total > 1 ? '↻ Odtwórz jeszcze raz' : '▶ Odtwórz'}
       </Button>
       <Button key="sim-step" onPress={set(s => ({ ...s, cursor: clamp(s.cursor + 1) }))}>
@@ -212,6 +214,12 @@ async function renderJs(io: Host, k: Kit, s: MentorSimState): Promise<RenderElem
       {pc?.problem && <Text color="warning" wrap="wrap">{pc.problem}</Text>}
       {badCall && <Text color="warning" wrap="wrap">{`„${typed}” to nie jest wywołanie funkcji${auto ? `, więc uruchamiam ${auto.label}. Wpisz np. ${auto.label}` : '. Wpisz np. nazwa(1, 2)'}.`}</Text>}
       <Input key="sim-call" label={pair ? 'Wywołanie (A i B):' : 'Wywołanie:'} placeholder={auto ? auto.label : pair?.hint ? pair.hint : 'np. add(2, 3)'} value={s.callArgs} submitLabel="uruchom" onSubmit={value => io.set(S.sim, x => ({ ...x, callArgs: value, cursor: 0 }))} />
+      {(k.surface === 'desktop' || k.surface === 'vscode') && r.steps.length > 1 && (() => {
+        const { Svg } = k.E as Elements['desktop']
+        const W = Math.max(160, Math.min(560, k.cols * 8 - 40))
+        const done = (cursor + 1) / Math.max(1, r.steps.length)
+        return <Box marginTop={1}><Svg key="sim-bar" source={pixelBarSvg(done, W, s.playing ? '#d97757' : '#8b7cf6', `krok ${cursor + 1}/${r.steps.length}`, !!s.playing)} alt={`krok ${cursor + 1} z ${r.steps.length}`} width={W} height={16} /></Box>
+      })()}
       {controls(io, k, Math.max(1, r.steps.length), cursor, !!pair || s.edits.length > 0, variant, !!pair, !!s.playing, s.speed ?? 'slow')}
       {panel}
       {r.error && r.error.kind !== 'syntax' && <Text color="error" wrap="wrap">{r.error.message}</Text>}
