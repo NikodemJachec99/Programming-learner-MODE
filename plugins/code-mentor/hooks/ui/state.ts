@@ -43,6 +43,8 @@ export const DEFAULT_SETTINGS: MentorSettings = {
   autoQuiz: true,
   cost: 'balanced',
   model: 'haiku',
+  modelId: '',
+  effort: 'default',
   sendCode: 'redacted',
   maxSnippetLines: 80,
   saveChanges: true,

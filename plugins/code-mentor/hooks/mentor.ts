@@ -21,7 +21,7 @@ import type {
 } from '../types'
 import { CONCEPTS } from './content/concepts'
 import type { ConceptDef } from './content/types'
-import { Breaker, COST_PROFILES, estimateTokens, MANUAL_LIMIT, MIN_GAP_MS, today } from './engine/budget'
+import { Breaker, COST_PROFILES, effortFor, estimateTokens, MANUAL_LIMIT, MIN_GAP_MS, modelFor, today, validModelId } from './engine/budget'
 import { BASIC_CONCEPTS, applyHunks, changedRanges, describeChange, simDialect, windowFor } from './engine/change'
 import type { ChangeFull, ChangeMeta } from './engine/change'
 import { classifyCommand, detectConcepts, isConfigFile, newSymbols } from './engine/detect'
@@ -1048,12 +1048,12 @@ export class Mentor {
     if (allowModel && !this.breaker.open(now) && this.ctx) {
       const sendCode = this.settings.sendCode !== 'off' && !obs.blocked
       const req = lessonRequest(input, sendCode)
-      cacheKey = hash(`${c.id}|${(job.whole?.files ?? []).join(',')}|${d.snippet}|${input.settings.detail}|${job.deep}|${levels[c.id] ?? 0}|${this.settings.model}|${sendCode}|${(input.prefs ?? []).join('|')}`)
+      cacheKey = hash(`${c.id}|${(job.whole?.files ?? []).join(',')}|${d.snippet}|${input.settings.detail}|${job.deep}|${levels[c.id] ?? 0}|${modelFor(this.settings)}|${this.settings.effort ?? 'default'}|${sendCode}|${(input.prefs ?? []).join('|')}`)
       const cached = await one<{ body: unknown } | Record<string, unknown> | null>(io, this.ctx, 'cacheGet', { key: cacheKey }).catch(() => null)
       if (cached && typeof cached === 'object') {
         body = mergeModelLesson(body, cached as Record<string, unknown>)
         source = 'model'
-        modelName = `${this.settings.model} (z cache)`
+        modelName = `${modelFor(this.settings)} (z cache)`
       } else {
         const profile = COST_PROFILES[this.settings.cost]
         const maxOut = Math.round((job.deep ? 1.6 : 1) * (profile.maxTokensPerLesson || 2200))
@@ -1063,7 +1063,7 @@ export class Mentor {
         const grant = await one<{ granted: boolean; calls: number }>(io, this.ctx, 'reserveBudget', { day, kind: job.kind, maxCalls: limits.maxCalls, maxTokens: limits.maxTokens, estTokens: est }).catch(() => ({ granted: false, calls: -1 }))
         if (!grant.granted) why.push(`dzienny limit ${job.kind === 'manual' ? 'ręcznych' : 'automatycznych'} wywołań wyczerpany`)
         else {
-          const r = await io.complete({ model: this.settings.model, system: req.system, prompt: req.prompt, maxTokens: maxOut, timeoutMs: 120000 })
+          const r = await io.complete({ model: modelFor(this.settings), ...this.effortArg(), system: req.system, prompt: req.prompt, maxTokens: maxOut, timeoutMs: 120000 })
           tokensIn = r.usage.input_tokens + (r.usage.cache_read_input_tokens ?? 0) + (r.usage.cache_creation_input_tokens ?? 0)
           tokensOut = r.usage.output_tokens
           await write(io, this.ctx, [{ op: 'commitUsage', args: { day, kind: job.kind, tokensIn, tokensOut } }])
@@ -1072,7 +1072,7 @@ export class Mentor {
             if (json) {
               body = mergeModelLesson(body, json)
               source = 'model'
-              modelName = this.settings.model
+              modelName = modelFor(this.settings)
               this.breaker.ok()
               await write(io, this.ctx, [{ op: 'cachePut', args: { key: cacheKey, body: json, now } }])
             } else {
@@ -1245,7 +1245,7 @@ Pokaż inny, krótki przykład tego samego mechanizmu w innym kontekście (np. z
     const limits = kind === 'manual' ? { maxCalls: MANUAL_LIMIT.calls, maxTokens: MANUAL_LIMIT.tokens } : { maxCalls: COST_PROFILES[this.settings.cost].autoCallsPerDay, maxTokens: COST_PROFILES[this.settings.cost].tokensPerDay }
     const grant = await one<{ granted: boolean }>(io, this.ctx, 'reserveBudget', { day, kind, ...limits, estTokens: est }).catch(() => ({ granted: false }))
     if (!grant.granted) return null
-    const r = await io.complete({ model: this.settings.model, system, prompt, maxTokens: maxOut, timeoutMs: 90000 })
+    const r = await io.complete({ model: modelFor(this.settings), ...this.effortArg(), system, prompt, maxTokens: maxOut, timeoutMs: 90000 })
     await write(io, this.ctx, [{ op: 'commitUsage', args: { day, kind, tokensIn: r.usage.input_tokens, tokensOut: r.usage.output_tokens } }])
     await this.countUsage(io, kind, r.usage.input_tokens + r.usage.output_tokens)
     if (!r.isAnswered) {
@@ -1262,7 +1262,21 @@ Pokaż inny, krótki przykład tego samego mechanizmu w innym kontekście (np. z
     return this.settings
   }
 
+  /** Effort do wywołania modelu: pusty obiekt, gdy domyślny. */
+  effortArg(): { effort?: 'low' | 'medium' | 'high' } {
+    const effort = effortFor(this.settings)
+    return effort ? { effort } : {}
+  }
+
   async setSettings(io: Host, patch: Partial<MentorSettings>): Promise<void> {
+    if (patch.modelId !== undefined) {
+      const id = patch.modelId.trim()
+      if (id && !validModelId(id)) {
+        await this.notice(io, tr(`„${id.slice(0, 80)}” to nie jest identyfikator modelu. Wpisz np. claude-sonnet-5-5 albo zostaw puste.`, `“${id.slice(0, 80)}” is not a model id. Type e.g. claude-sonnet-5-5 or leave it empty.`))
+        return
+      }
+      patch = { ...patch, modelId: id }
+    }
     this.settings = { ...this.settings, ...patch }
     setLang(this.settings.language)
     await io.set(S.settings, () => this.settings)

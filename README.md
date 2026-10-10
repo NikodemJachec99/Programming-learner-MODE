@@ -7,7 +7,7 @@
   <a href="#wymagania"><img alt="Windows i macOS" src="https://img.shields.io/badge/Windows%20%7C%20macOS-0078d4?style=flat-square"></a>
   <a href="#flutter-i-dart"><img alt="Flutter i Dart" src="https://img.shields.io/badge/Flutter%20%26%20Dart-02569B?style=flat-square&logo=flutter&logoColor=white"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-135%20%2F%20135-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-137%20%2F%20137-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licencja-MIT-6b7280?style=flat-square"></a>
 </p>
@@ -163,7 +163,7 @@ Masz zainstalowaną starą nazwę `claude-code-mentor` (do 1.4.2)? Nowe Claude C
 /plugin install code-mentor@programming-learner-mode
 ```
 
-Skrypt z opcji B robi to sam.
+Skrypt z opcji B robi to sam. Potem otwórz nową sesję albo uruchom Claude ponownie: w sesji otwartej przed przejściem stara wersja zostaje w pamięci i nad promptem są dwa paski.
 
 ### Opcja B: skrypt instalacyjny (zalecany)
 
@@ -377,6 +377,8 @@ Dodatkowo działają:
 
 Limity są pilnowane atomowo w bazie, więc kilka równoległych sesji ich nie przekroczy.
 
+Model lekcji wybierasz w Ustawieniach, w Zaawansowanych: Haiku (domyślny), Sonnet albo Opus. Zamiast aliasu możesz wpisać konkretną wersję, np. `claude-sonnet-5-5`, i ustawić effort (niski, średni, wysoki). „Test modelu” robi 1 krótkie wywołanie i pokazuje, czy konto ma dostęp do tej wersji.
+
 ## Dane i kopie zapasowe
 
 | System | Katalog danych |
@@ -424,7 +426,7 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 109 / 109 |
+| `claude plugin test plugins/code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 111 / 111 |
 | `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian, czyszczenie starej historii, usuwanie plików jednorazowych, „Wyczyść historię” i „Resetuj postęp”, ekspozycja raz dziennie | 21 / 21 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |

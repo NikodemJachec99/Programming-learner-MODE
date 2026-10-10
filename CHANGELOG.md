@@ -16,6 +16,8 @@ Przejście ze starej wersji:
 
 `scripts/install.ps1` i `scripts/install.sh` robią to same: odinstalowują starą nazwę i instalują nową. `uninstall` usuwa obie.
 
+Po przejściu otwórz nową sesję albo uruchom Claude ponownie. W sesji otwartej przed przejściem stara wersja zostaje w pamięci i `/reload-plugins` jej nie usuwa, więc nad promptem widać dwa paski.
+
 Baza z historią i wiedzą zostaje. Wynik testu poziomu i oceny lekcji Claude Code trzyma osobno dla każdej nazwy pluginu, więc po przejściu karta testu poziomu może pokazać się jeszcze raz.
 
 ### Panele z paska
@@ -32,6 +34,12 @@ Baza z historią i wiedzą zostaje. Wynik testu poziomu i oceny lekcji Claude Co
 ### Dane
 
 - W Ustawieniach obok „Usuń wszystko” są „Wyczyść historię” (zmiany, obserwacje, lekcje) i „Resetuj postęp” (wiedza, odpowiedzi, dowody). Każde z potwierdzeniem i kopią bazy przed czyszczeniem.
+
+### Model lekcji
+
+- W Zaawansowanych, w sekcji AI, pole „Konkretna wersja”: pełny identyfikator modelu (np. `claude-sonnet-5-5`) zamiast aliasu Haiku, Sonnet albo Opus. Puste pole to alias jak wcześniej. Zła nazwa jest odrzucana z komunikatem, a „Test modelu” pokazuje, czy konto ma dostęp do tej wersji.
+- „Effort lekcji”: domyślny dla modelu, niski, średni albo wysoki.
+- Wersja i effort wchodzą do klucza cache lekcji, więc po zmianie lekcja nie przychodzi ze starego cache.
 
 ### Język
 

@@ -2,7 +2,7 @@ import type { RenderElement } from 'claude-code'
 import type { Host } from '../host'
 import type { MentorSettings } from '../../types'
 import { mentor } from '../mentor'
-import { COST_PROFILES, MODEL_LABELS } from '../engine/budget'
+import { COST_PROFILES, EFFORT_LABELS, MODEL_LABELS, modelFor } from '../engine/budget'
 import { card, muted, section } from './kit'
 import type { Kit } from './kit'
 import { S } from './state'
@@ -93,11 +93,14 @@ export async function renderSettings(io: Host, k: Kit): Promise<RenderElement> {
         k,
         'AI',
         pick('model', tr('Model lekcji:', 'Lesson model:'), (Object.keys(MODEL_LABELS) as (keyof typeof MODEL_LABELS)[]).map(key => ({ value: key, label: MODEL_LABELS[key] }))),
+        <Input key="s-modelId" label={tr('Konkretna wersja (opcjonalnie):', 'Specific version (optional):')} placeholder="claude-sonnet-5-5" value={s.modelId ?? ''} submitLabel={tr('ustaw', 'set')} onSubmit={v => mentor.setSettings(io, { modelId: v })} />,
+        <Text dimColor wrap="wrap">{s.modelId ? tr(`Lekcje idą do ${modelFor(s)}. Wyczyść pole, żeby wrócić do aliasu „${s.model}”.`, `Lessons go to ${modelFor(s)}. Clear the field to go back to the “${s.model}” alias.`) : tr(`Puste: alias „${s.model}”, czyli wersja, którą Claude Code ma pod tym aliasem.`, `Empty: the “${s.model}” alias, the version Claude Code maps it to.`)}</Text>,
+        pick('effort', tr('Effort lekcji:', 'Lesson effort:'), (Object.keys(EFFORT_LABELS) as (keyof typeof EFFORT_LABELS)[]).map(key => ({ value: key, label: EFFORT_LABELS[key] }))),
         <Text>{tr(`Dziś: automatyczne ${usage.autoCalls}/${usage.limitCalls}, ręczne ${usage.manualCalls}, tokeny ≈ ${usage.tokens.toLocaleString('pl-PL')}/${usage.limitTokens.toLocaleString('pl-PL')}`, `Today: automatic ${usage.autoCalls}/${usage.limitCalls}, manual ${usage.manualCalls}, tokens ≈ ${usage.tokens.toLocaleString('en-US')}/${usage.limitTokens.toLocaleString('en-US')}`)}</Text>,
-        usage.breakerUntil > (await io.now()) && <Text color="warning">Model wstrzymany po serii błędów API do {new Date(usage.breakerUntil).toLocaleTimeString('pl-PL')}.</Text>,
+        usage.breakerUntil > (await io.now()) && <Text color="warning">{tr(`Model wstrzymany po serii błędów API do ${new Date(usage.breakerUntil).toLocaleTimeString('pl-PL')}.`, `Model paused after a series of API errors until ${new Date(usage.breakerUntil).toLocaleTimeString('en-US')}.`)}</Text>,
         muted(k, tr('Każda lekcja AI to dodatkowe wywołanie modelu z Twojego konta Claude (te same limity co Claude Code). Nie startuje tury w rozmowie i nie zmienia kodu. Cache: identyczna zmiana nie jest wysyłana drugi raz.', 'Each AI lesson is an extra model call on your Claude account (same limits as Claude Code). It does not start a conversation turn and does not change code. Cache: an identical change is not sent twice.')),
         <Button key="m-test" onPress={() => mentor.data.testModel(io)}>
-          Test modelu (1 krótkie wywołanie)
+          {tr('Test modelu (1 krótkie wywołanie)', 'Test the model (1 short call)')}
         </Button>,
       )}
       {adv && section(

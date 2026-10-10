@@ -2,7 +2,7 @@
 // atomowo w bazie (wspólne dla równoległych sesji), a odstępy i bezpiecznik
 // błędów w pamięci sesji.
 
-import type { MentorCost, MentorFrequency, MentorModel } from '../../types'
+import type { MentorCost, MentorEffort, MentorFrequency, MentorModel, MentorSettings } from '../../types'
 import { tr } from '../i18n'
 
 export type CostProfile = { autoCallsPerDay: number; tokensPerDay: number; maxTokensPerLesson: number; label: string }
@@ -36,6 +36,36 @@ export const MODEL_LABELS: Record<MentorModel, string> = {
   },
   get opus() {
     return tr('Opus (najdokładniejszy, najdroższy)', 'Opus (most thorough, priciest)')
+  },
+}
+
+/** Pełny identyfikator modelu: litery, cyfry, kropki, myślniki, podkreślenia, dwukropek, @ i [1m]. */
+export const MODEL_ID_RE = /^[a-z0-9][a-z0-9._:@-]{1,79}(\[1m\])?$/i
+
+export const validModelId = (id: string): boolean => MODEL_ID_RE.test(id.trim())
+
+/** Model do wywołania: konkretna wersja, gdy jest wpisana i poprawna, inaczej alias. */
+export const modelFor = (s: Pick<MentorSettings, 'model' | 'modelId'>): string => {
+  const id = s.modelId?.trim() ?? ''
+  return id && validModelId(id) ? id : s.model
+}
+
+/** Effort do wywołania albo nic, gdy domyślny. */
+export const effortFor = (s: Pick<MentorSettings, 'effort'>): 'low' | 'medium' | 'high' | undefined =>
+  s.effort && s.effort !== 'default' ? s.effort : undefined
+
+export const EFFORT_LABELS: Record<MentorEffort, string> = {
+  get default() {
+    return tr('domyślny dla modelu', 'model default')
+  },
+  get low() {
+    return tr('niski (taniej, szybciej)', 'low (cheaper, faster)')
+  },
+  get medium() {
+    return tr('średni', 'medium')
+  },
+  get high() {
+    return tr('wysoki (dokładniej, drożej)', 'high (more thorough, pricier)')
   },
 }
 

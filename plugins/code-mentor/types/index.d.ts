@@ -17,6 +17,7 @@ export type MentorDetail = 'short' | 'normal' | 'deep'
 export type MentorFrequency = 'rare' | 'normal' | 'often'
 export type MentorCost = 'off' | 'saver' | 'balanced' | 'generous'
 export type MentorModel = 'haiku' | 'sonnet' | 'opus'
+export type MentorEffort = 'default' | 'low' | 'medium' | 'high'
 export type MentorSendCode = 'off' | 'redacted'
 
 export type MentorSettings = {
@@ -31,6 +32,10 @@ export type MentorSettings = {
   autoQuiz: boolean
   cost: MentorCost
   model: MentorModel
+  /** Pełny identyfikator modelu (np. claude-sonnet-5-5). Pusty: alias z `model`. */
+  modelId?: string
+  /** Effort lekcji AI. `default`: domyślny dla modelu. */
+  effort?: MentorEffort
   sendCode: MentorSendCode
   maxSnippetLines: number
   /** Change Lab: zapisuj kod przed i po zmianie (lokalnie, z limitem). */

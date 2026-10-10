@@ -4,6 +4,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { findSites } from '../hooks/sim/variants'
 import { DEFAULT_SIM } from '../hooks/ui/state'
+import { effortFor, modelFor, validModelId } from '../hooks/engine/budget'
 
 const PLUGIN = 'code-mentor'
 const PANE = (bodyColumns = 72) => ({
@@ -196,4 +197,40 @@ test('język: English w Ustawieniach przełącza interfejs, polski wraca', async
   await ui.select({ key: 's-language', value: 'pl' })
   expect(await ui.find({ type: 'Button', key: 'tab-changes', text: 'Zmiany' })).toBeDefined()
   await ui.unmount()
+})
+
+test('model: konkretna wersja zamiast aliasu, effort tylko gdy nie domyślny', () => {
+  expect(modelFor({ model: 'haiku', modelId: '' })).toBe('haiku')
+  expect(modelFor({ model: 'haiku', modelId: ' claude-sonnet-5-5 ' })).toBe('claude-sonnet-5-5')
+  expect(modelFor({ model: 'opus', modelId: 'zła nazwa; rm -rf' })).toBe('opus')
+  expect(validModelId('claude-opus-5-5[1m]')).toBe(true)
+  expect(validModelId('us.anthropic.claude-sonnet-5-5-v1:0')).toBe(true)
+  expect(validModelId('a b')).toBe(false)
+  expect(effortFor({ effort: 'default' })).toBe(undefined)
+  expect(effortFor({})).toBe(undefined)
+  expect(effortFor({ effort: 'low' })).toBe('low')
+})
+
+test('ustawienia: wersja modelu i effort w Zaawansowanych, zła nazwa odrzucona', async ($, on) => {
+  mock.clock(on, { now: 1_760_000_000_000 })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE(), surface })
+    await ui.select({ key: 'tab-more', value: 'settings' })
+    expect(await ui.find({ key: 's-modelId' })).toBe(undefined)
+    await ui.press({ key: 'set-adv' })
+    expect(await ui.find({ type: 'Text', text: /Puste: alias „haiku”/ })).toBeDefined()
+    await ui.input({ key: 's-modelId', text: 'claude-sonnet-5-5' })
+    expect(await ui.find({ type: 'Text', text: /Lekcje idą do claude-sonnet-5-5/ })).toBeDefined()
+    await ui.input({ key: 's-modelId', text: 'zła nazwa' })
+    expect(await ui.find({ type: 'Text', text: /to nie jest identyfikator modelu/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Lekcje idą do claude-sonnet-5-5/ })).toBeDefined()
+    await ui.select({ key: 's-effort', value: 'low' })
+    expect(await ui.find({ key: 's-effort' })).toBeDefined()
+    await ui.input({ key: 's-modelId', text: '' })
+    expect(await ui.find({ type: 'Text', text: /Puste: alias „haiku”/ })).toBeDefined()
+    await ui.select({ key: 's-effort', value: 'default' })
+    await ui.press({ key: 'n-close' })
+    await ui.press({ key: 'set-adv' })
+    await ui.unmount()
+  }
 })

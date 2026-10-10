@@ -1,7 +1,7 @@
 // Dane Mentora: kopie zapasowe, eksport i import, czyszczenie, diagnostyka, test modelu, piaskownica SQL.
 
 import type { Host } from '../host'
-import { COST_PROFILES } from '../engine/budget'
+import { COST_PROFILES, modelFor } from '../engine/budget'
 import { one, pendingCount, runSql } from '../store/db'
 import { DEFAULT_SETTINGS, S } from '../ui/state'
 import type { Mentor } from '../mentor'
@@ -126,7 +126,8 @@ export class DataController {
   async testModel(io: Host): Promise<void> {
     const now = await io.now()
     const r = await this.m.callModel(io, 'manual', 'Odpowiedz jednym słowem.', 'Napisz: działa', 20, now)
-    await this.m.notice(io, r ? `Model ${this.m.settings.model} odpowiada: ${r.trim().slice(0, 40)}` : `Model ${this.m.settings.model} niedostępny (limit, błąd API albo brak bazy do pilnowania limitów).`)
+    const name = modelFor(this.m.settings)
+    await this.m.notice(io, r ? tr(`Model ${name} odpowiada: ${r.trim().slice(0, 40)}`, `Model ${name} answers: ${r.trim().slice(0, 40)}`) : tr(`Model ${name} niedostępny (brak dostępu na koncie, limit, błąd API albo brak bazy do pilnowania limitów).`, `Model ${name} unavailable (no access on the account, limit, API error or no database to enforce limits).`))
   }
 
   async runSql(io: Host, setup: string, query: string): Promise<string> {

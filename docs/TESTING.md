@@ -10,7 +10,7 @@ node --no-warnings --test "plugins/code-mentor/helper/test/*.test.mjs"
 
 | Zestaw | Wynik |
 |---|---|
-| Testy pluginu (Change Lab, edycje po kolei, pliki i git, laboratorium, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki, panele z paska, język) | 109 / 109 |
+| Testy pluginu (Change Lab, edycje po kolei, pliki i git, laboratorium, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki, panele z paska, język, wersja modelu) | 111 / 111 |
 | Helper bazy (migracje v1 → v2, model opanowania, współbieżność 8 procesów, eksport i import, historia zmian, czyszczenie starej historii, usuwanie plików jednorazowych, czyszczenie historii i postępu, ekspozycja raz dziennie) | 21 / 21 |
 | Piaskownica SQL | 5 / 5 |
 | Walidacja marketplace i obu pluginów | ✔ |
@@ -79,6 +79,7 @@ Testy pluginu przechodzą na Claude Code 2.1.283 i 2.1.296, walidacja na 2.1.296
 | Lekcja z zadania | PASS | test: pliki, edycje i linie z jednego polecenia (3 edycje w 2 plikach, +8 −2), zdanie o zadaniu w lekcji wbudowanej, polecenie lekcji AI ma akapit o całym zadaniu |
 | Podsumowanie | PASS | test: karta w Zmianach po 3 dniach od zamknięcia, „Zamknij” chowa, w Mojej wiedzy zawsze. Helper: ekspozycja raz dziennie na pojęcie i projekt |
 | Wyczyść historię i Resetuj postęp | PASS | helper: każda część czyści tylko swoje tabele, bez potwierdzenia odmowa, kopia przed czyszczeniem |
+| Wersja modelu i effort | PASS | test: pełny identyfikator zamiast aliasu, zła nazwa odrzucona z komunikatem i stara wersja zostaje, puste pole wraca do aliasu, effort wysyłany tylko gdy nie domyślny. Wywołania modelu z tą wersją w teście nie było (wymaga konta) |
 | Język | PASS | test: przełączenie na English zmienia napisy panelu i paska, powrót na polski |
 | Flutter i Dart | PASS | test: wynik symulatora Darta zgodny z Dartem (`~/`, `%`, null safety, Future), drzewo widgetów, pojęcia Fluttera w kodzie ekranu, komendy `flutter` |
 | macOS | częściowo | CI: helper i baza na macos-latest, składnia skryptów `.sh`. Instalacji w Claude Desktop na Macu nie sprawdzałem ręcznie |
