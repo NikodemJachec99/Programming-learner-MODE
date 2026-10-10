@@ -26,7 +26,7 @@ else
   DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ClaudeCodeMentor"
 fi
 
-for p in claude-code-mentor context-bar; do
+for p in code-mentor claude-code-mentor context-bar; do
   claude plugin uninstall "$p@$MARKET" --scope user 2>&1 || true
 done
 [ "$KEEP_MARKET" = 1 ] || claude plugin marketplace remove "$MARKET" 2>&1 || true
@@ -37,7 +37,7 @@ if [ "$DELETE_DATA" = 1 ] && [ -d "$DATA_DIR" ]; then
   EXPORT="$DEST/mentor-export-$(date +%Y%m%d-%H%M%S).json"
   if command -v node >/dev/null 2>&1; then
     node -e 'process.stdout.write(JSON.stringify({ v: 1, dataDir: process.argv[1], ops: [{ op: "export", args: { path: process.argv[2] } }] }))' "$DATA_DIR" "$EXPORT" \
-      | node --no-warnings "$ROOT/plugins/claude-code-mentor/helper/mentor-db.mjs" >/dev/null || true
+      | node --no-warnings "$ROOT/plugins/code-mentor/helper/mentor-db.mjs" >/dev/null || true
   fi
   [ -f "$EXPORT" ] && echo "Eksport przed usunięciem: $EXPORT"
   rm -rf "$DATA_DIR"

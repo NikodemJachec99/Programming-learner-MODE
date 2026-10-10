@@ -1,0 +1,22 @@
+{
+  "name": "code-mentor",
+  "version": "1.5.0",
+  "description": "Osobisty nauczyciel programowania w Claude Code: lekcje z prawdziwych zmian w Twoim kodzie (JS/TS, Python, PHP, SQL, Dart i Flutter), symulator wykonania krok po kroku, ćwiczenia i trwały model wiedzy w lokalnym SQLite.",
+  "author": {
+    "name": "Nikodem Jachec",
+    "url": "https://github.com/NikodemJachec99"
+  },
+  "homepage": "https://github.com/NikodemJachec99/Programming-learner-MODE",
+  "repository": "https://github.com/NikodemJachec99/Programming-learner-MODE",
+  "license": "MIT",
+  "keywords": [
+    "education",
+    "mentor",
+    "learning",
+    "simulator",
+    "sqlite",
+    "spaced-repetition",
+    "flutter",
+    "dart"
+  ]
+}

@@ -19,7 +19,7 @@ Line 'Node.js' "$(& $node --version 2>&1) ($node)" ($LASTEXITCODE -eq 0)
 
 $req = @{ v = 1; dataDir = $DataDir; ops = @(@{ op = 'diag' }) } | ConvertTo-Json -Depth 5 -Compress
 try {
-  $d = (($req | & $node --no-warnings (Join-Path $Root 'plugins\claude-code-mentor\helper\mentor-db.mjs')) | ConvertFrom-Json).results[0].value
+  $d = (($req | & $node --no-warnings (Join-Path $Root 'plugins\code-mentor\helper\mentor-db.mjs')) | ConvertFrom-Json).results[0].value
   Line 'Baza' "$DataDir\mentor.db"
   Line 'Schemat / SQLite' "v$($d.schemaVersion) / $($d.sqliteVersion) / $($d.journalMode)"
   Line 'Integralność' $d.integrity ($d.integrity -eq 'ok')
@@ -27,7 +27,7 @@ try {
 } catch { Line 'Baza' "BŁĄD: $_" $false }
 
 $list = (& claude plugin list 2>&1) -join "`n"
-foreach ($p in 'claude-code-mentor') {
+foreach ($p in 'code-mentor') {
   $ok = $list -match [regex]::Escape("$p@$Market")
   Line $p $(if ($ok) { 'zainstalowany' } else { 'nie zainstalowany' }) $ok
 }

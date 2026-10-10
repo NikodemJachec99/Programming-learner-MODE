@@ -4,9 +4,9 @@
 
 ## Jak sprawdzone
 
-- [ ] `claude plugin validate .` i `claude plugin validate plugins/claude-code-mentor`
-- [ ] `claude plugin test plugins/claude-code-mentor`
-- [ ] `node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"`
+- [ ] `claude plugin validate .` i `claude plugin validate plugins/code-mentor`
+- [ ] `claude plugin test plugins/code-mentor`
+- [ ] `node --no-warnings --test "plugins/code-mentor/helper/test/*.test.mjs"`
 - [ ] nowa funkcja albo poprawka ma test
 
 ## Zrzuty ekranu

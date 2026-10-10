@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Programming Learner MODE: Claude Code Mentor, mod, który uczy programowania na Twoim własnym kodzie.",
-    "version": "1.4.2"
+    "version": "1.5.0"
   },
   "plugins": [
     {
-      "name": "claude-code-mentor",
-      "source": "./plugins/claude-code-mentor",
+      "name": "code-mentor",
+      "source": "./plugins/code-mentor",
       "description": "Nauczyciel programowania: Change Lab (kod przed i po każdej zmianie Claude, uruchomienie obu wersji), lekcje, symulator, ćwiczenia, model wiedzy w SQLite.",
-      "version": "1.4.2",
+      "version": "1.5.0",
       "category": "education"
     }
   ]
