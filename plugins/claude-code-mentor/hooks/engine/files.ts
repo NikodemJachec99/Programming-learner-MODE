@@ -112,7 +112,7 @@ export function treeRows(f: FilesState): TreeRow[] {
   return rows
 }
 
-export type Touch = 'reading' | 'editing' | 'opened' | 'edited' | 'committed' | 'failed' | 'denied'
+export type Touch = 'reading' | 'editing' | 'opened' | 'edited' | 'committed' | 'failed' | 'denied' | 'work'
 
 export const TOUCH_LABEL: Record<Touch, string> = {
   reading: 'Czyta…',
@@ -122,6 +122,7 @@ export const TOUCH_LABEL: Record<Touch, string> = {
   committed: 'Zacommitowany',
   failed: 'Błąd',
   denied: 'Odrzucony',
+  work: 'Roboczy',
 }
 
 /** Stan pliku, którego Claude dotknął w tej turze. Commit wygrywa z edycją, błąd z sukcesem. */

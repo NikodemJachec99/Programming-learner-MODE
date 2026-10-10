@@ -10,8 +10,8 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 
 | Zestaw | Wynik |
 |---|---|
-| Testy pluginu (Change Lab, edycje po kolei, pliki i git, laboratorium, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 101 / 101 |
-| Helper bazy (migracje v1 → v2, model opanowania, współbieżność 8 procesów, eksport i import, historia zmian, czyszczenie starej historii) | 19 / 19 |
+| Testy pluginu (Change Lab, edycje po kolei, pliki i git, laboratorium, test poziomu, symulator JS i Darta, Flutter, silnik, prywatność, UI desktop i terminal, hooki) | 105 / 105 |
+| Helper bazy (migracje v1 → v2, model opanowania, współbieżność 8 procesów, eksport i import, historia zmian, czyszczenie starej historii, usuwanie plików jednorazowych) | 20 / 20 |
 | Piaskownica SQL | 5 / 5 |
 | Walidacja marketplace i obu pluginów | ✔ |
 
@@ -55,6 +55,7 @@ node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
 | Grafika | PASS | test: krab, wiersz agenta, pasek zadania (pigułka, procent, kostium), kafelki, czas z godzinami, pasek z pikseli, shimmer i oś to SVG z `prefers-reduced-motion`; tekst w SVG escapowany; shimmer w terminalu przesuwa się z klatką; pogoda kontekstu. Wygląd sprawdzony w przeglądarce na jasnym i ciemnym tle (statyczny zrzut), nie w panelu Claude |
 | Aktywność plików | PASS | test: odczyt fioletowy, edycja pomarańczowa, po końcu błysk i powrót do neutralnego po 2,7 s (wirtualny zegar), nieudana edycja zostaje błędem i nie liczy się jako zmiana, odrzucona osobno. W Zmianach: karta Teraz, „Claude dotknął” z plakietkami Otwarty, Edytowany, Błąd, plik otwiera zmianę, błąd nie gaśnie |
 | Panel Pliki | PASS | test: jeden `git status` na odświeżenie, gałąź `main` z ↑1, „2 zmienione pliki”, droga do dotkniętego pliku rozwinięta, po commicie Claude plakietka Zacommitowany i „zacommitowane a1c9e42”; status gita z rename i usunięciem, filtr nazw z rodzicami, stany pliku, plakietka JS |
+| Nauka tylko na kodzie projektu | PASS | test: kod i konfiguracja projektu uczą; scratchpad, `~/.claude`, inny projekt, `dist`, lockfile, Markdown i logi nie; zbyt szeroki katalog projektu (dysk, katalog domowy) nie robi z wszystkiego plików roboczych. Koniec zadania: plik utworzony i usunięty znika z historii, plik przywrócony do stanu sprzed zadania jest „cofnięty” bez quizu, plik roboczy bez pojęć i bez quizu. Panel: karta liczy tylko kod projektu, robocze zwinięte, szczegóły pliku roboczego bez „Wyjaśnij” i „Sprawdź się”. Błąd skryptu w scratchpad nie jest lekcją, błąd `npm test` jest. Helper: `deleteChanges` usuwa tylko wskazane zmiany |
 | Lista zmian | PASS | test: plik edytowany 2 razy to jeden wiersz z ×2 i sumą linii, otwiera ostatnią edycję, nieudana edycja liczona osobno; karta „3 edycje w 2 plikach” z ikoną TS |
 | Edycje po kolei | PASS | test: „2 edycje w 2 plikach”, „Edycje po kolei” z kółkami, „Edycja k z N”, diff z parą linii, `p` i `n` przechodzą między edycjami, przy równym czasie kolejność z listy; diff słów: „what a lot of people like” → „smoother than iced coffee”, linia bez nic wspólnego bez zaznaczeń, przerwa między miejscami, tekst w SVG escapowany |
 | Skrócony diff | PASS | test: 1 linia kontekstu, poprawne nagłówki hunków po skróceniu, limit zmian z licznikiem reszty |

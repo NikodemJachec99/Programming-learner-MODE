@@ -8,6 +8,7 @@ import type { Elements, RenderElement } from 'claude-code'
 import type { Host } from '../host'
 import type { ChangeMeta } from '../engine/change'
 import { groupByTurn } from '../engine/change'
+import { scopeOf, teachable } from '../engine/scope'
 import { diffRows } from '../engine/worddiff'
 import type { DiffRow } from '../engine/worddiff'
 import { mentor } from '../mentor'
@@ -36,8 +37,13 @@ const plural = (n: number, one: string, few: string, many: string) =>
 /** Edycje tej samej tury co wybrana, od najstarszej. */
 export function turnSteps(changes: readonly ChangeMeta[], id: string): ChangeMeta[] {
   const g = groupByTurn(changes).find(x => x.items.some(c => c.id === id))
+  if (!g) return []
+  // przy zmianie w kodzie projektu kroki to tylko kod projektu (bez plików roboczych Claude i notatek)
+  const learn = (c: ChangeMeta) => teachable(scopeOf(c.file, mentor.projectRoot))
+  const sel = g.items.find(c => c.id === id)
+  const items = sel && learn(sel) ? g.items.filter(learn) : g.items
   // lista jest od najnowszej; przy tym samym czasie kolejność z listy, odwrócona
-  return g ? [...g.items].reverse().sort((a, b) => a.ts - b.ts) : []
+  return [...items].reverse().sort((a, b) => a.ts - b.ts)
 }
 
 /** Kółko kroku z linią do sąsiadów (oś „edycje po kolei”). */
@@ -70,7 +76,7 @@ export function renderReplayHead(io: Host, k: Kit, changes: readonly ChangeMeta[
   const H = 34
   const rows = list.map((c, i) => {
     const active = c.id === m.id
-    const state = c.status !== 'ok' ? 'failed' : active ? 'active' : i < at ? 'done' : 'next'
+    const state = c.status === 'failed' || c.status === 'blocked' ? 'failed' : active ? 'active' : i < at ? 'done' : 'next'
     const where = dirOf(c.file)
     const open = () => mentor.openChange(io, c.id)
     if (desk) {
@@ -89,7 +95,7 @@ export function renderReplayHead(io: Host, k: Kit, changes: readonly ChangeMeta[
               <Text color={DEL}>{` −${c.removed}`}</Text>
             </Text>
           ) : (
-            <Text color={DEL}>{c.status === 'failed' ? 'nie weszła' : 'wrażliwy'}</Text>
+            <Text color={c.status === 'reverted' ? undefined : DEL} dimColor={c.status === 'reverted'}>{c.status === 'failed' ? 'nie weszła' : c.status === 'reverted' ? '↩ cofnięta' : 'wrażliwy'}</Text>
           )}
         </Box>
       )

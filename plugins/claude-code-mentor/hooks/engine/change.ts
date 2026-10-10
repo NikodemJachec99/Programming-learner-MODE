@@ -6,7 +6,8 @@
 import type { Hunk } from './diff'
 import { detectConcepts, newSymbols } from './detect'
 
-export type ChangeStatus = 'ok' | 'failed' | 'blocked'
+/** reverted: zmiana nie została w kodzie (plik wrócił do stanu sprzed tury albo go usunięto). */
+export type ChangeStatus = 'ok' | 'failed' | 'blocked' | 'reverted'
 
 /** Lekki rekord do listy (bez kodu). */
 export type ChangeMeta = {

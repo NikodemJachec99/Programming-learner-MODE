@@ -624,3 +624,104 @@ test('panel: zadanie w tle z Bash widać w Zmianach, a jego wyjście dochodzi na
   expect(await pane.find({ type: 'Text', text: /zatrzymane · / })).toBeDefined()
   await pane.unmount()
 })
+
+// ---------- co jest materiałem do nauki ----------
+
+test('nauka tylko na kodzie projektu: pliki robocze Claude, wygenerowane i notatki nie uczą', async () => {
+  const { scopeOf, teachable, workCommand, broadRoot } = await import('../hooks/engine/scope')
+  const root = 'D:/work/app'
+  expect(scopeOf('D:/work/app/src/a.ts', root)).toBe('code')
+  expect(scopeOf('src/a.ts', root)).toBe('code')
+  expect(scopeOf('D:/work/app/package.json', root)).toBe('config')
+  expect(scopeOf('C:/Users/x/AppData/Local/Temp/claude/s/scratchpad/attack.mts', root)).toBe('work')
+  expect(scopeOf('C:/Users/x/.claude/projects/p/memory/notes.md', root)).toBe('work')
+  expect(scopeOf('D:/other/project/x.ts', root)).toBe('work')
+  expect(scopeOf('D:/work/app/dist/bundle.js', root)).toBe('work')
+  expect(scopeOf('D:/work/app/package-lock.json', root)).toBe('work')
+  expect(scopeOf('D:/work/app/README.md', root)).toBe('notes')
+  expect(scopeOf('D:/work/app/logs/run.log', root)).toBe('notes')
+  // zbyt szeroki katalog projektu (dysk, katalog domowy): „poza projektem” nic nie znaczy
+  expect(broadRoot('C:/')).toBe(true)
+  expect(broadRoot('C:/Users/x')).toBe(true)
+  expect(scopeOf('D:/inne/x.ts', 'C:/')).toBe('code')
+  expect(teachable('code') && teachable('config')).toBe(true)
+  expect(teachable('work') || teachable('notes')).toBe(false)
+  expect(workCommand('node C:\\Users\\x\\AppData\\Local\\Temp\\claude\\s\\scratchpad\\a.mjs')).toBe(true)
+  expect(workCommand('npm test')).toBe(false)
+})
+
+test('koniec tury: plik jednorazowy znika z historii, cofnięta zmiana bez lekcji i quizu, plik roboczy bez lekcji', async () => {
+  const files: Record<string, string> = { 'C:/p/src/keep.ts': BEFORE.replace('x < 10', 'x <= 10'), 'C:/p/src/back.ts': BEFORE }
+  const io: Host = {
+    ...fakeHost(),
+    fsExists: p => Promise.resolve(p.replace(/\\/g, '/') in files),
+    fsRead: p => (p.replace(/\\/g, '/') in files ? Promise.resolve(files[p.replace(/\\/g, '/')]!) : Promise.reject(new Error('brak'))),
+    run: () => Promise.resolve({ exitCode: 128, stdout: '', stderr: 'not a git repository', isStdoutTruncated: false, isStderrTruncated: false }),
+  }
+  setState('changes', () => [])
+  mentor.onPrompt('popraw limity')
+  const edit = (file: string) => ({ result: { filePath: file, oldString: '', newString: '', originalFile: BEFORE, structuredPatch: PATCH, userModified: false, replaceAll: false } })
+  // zostaje w kodzie: zwykła zmiana
+  await mentor.onTool(io, 'Edit', { file_path: 'C:/p/src/keep.ts' }, edit('C:/p/src/keep.ts'))
+  // edytowana i przywrócona do stanu sprzed tury: cofnięta
+  await mentor.onTool(io, 'Edit', { file_path: 'C:/p/src/back.ts' }, edit('C:/p/src/back.ts'))
+  // utworzona i usunięta w tej turze: jednorazowa
+  await mentor.onTool(io, 'Write', { file_path: 'C:/p/src/probe.ts', content: 'export const probe = 1\n' }, { result: { type: 'create', filePath: 'C:/p/src/probe.ts', content: 'export const probe = 1\n', structuredPatch: [], originalFile: null } })
+  // skrypt w scratchpad: widać go, ale nie uczy
+  const work = 'C:/Users/x/AppData/Local/Temp/claude/s/scratchpad/check.mjs'
+  files[work] = 'for (const x of [1, 2]) console.log(x)\n'
+  await mentor.onTool(io, 'Write', { file_path: work, content: files[work] }, { result: { type: 'create', filePath: work, content: files[work], structuredPatch: [], originalFile: null } })
+  expect(getState('changes').length).toBe(4)
+  await mentor.settleTurn(io)
+  const after = getState('changes')
+  expect(after.map(c => c.file).sort()).toEqual(['C:/p/src/back.ts', 'C:/p/src/keep.ts', work].sort())
+  expect(after.find(c => c.file.endsWith('back.ts'))!.status).toBe('reverted')
+  expect(after.find(c => c.file.endsWith('keep.ts'))!.status).toBe('ok')
+  const keep = after.find(c => c.file.endsWith('keep.ts'))!
+  const back = after.find(c => c.file.endsWith('back.ts'))!
+  const scratch = after.find(c => c.file === work)!
+  expect(mentor.teachableChange(keep)).toBe(true)
+  expect(mentor.teachableChange(back)).toBe(false)
+  expect(mentor.teachableChange(scratch)).toBe(false)
+  // plik roboczy nie dostaje pojęć, więc nie trafia do „Warto zrozumieć” ani do lekcji
+  expect(scratch.concepts).toEqual([])
+  // cofnięta i robocza: „Sprawdź się” nic nie robi
+  setState('quiz', () => null)
+  await mentor.quizForChange(io, back.id)
+  await mentor.quizForChange(io, scratch.id)
+  expect(getState('quiz')).toBe(null)
+  expect(getState('lab').guess ?? null).toBe(null)
+  setState('changes', () => [])
+})
+
+test('panel: w karcie zadania kod projektu na wierzchu, pliki robocze Claude zwinięte i bez lekcji', async ($, on) => {
+  mock.clock(on, { now: T0 })
+  const work = 'C:/Users/x/AppData/Local/Temp/claude/s/scratchpad/attack.mts'
+  on('tool.call', { tool: 'Edit' }, (_$, e) => editResult(String((e as { file_path?: string }).file_path), BEFORE, PATCH))
+  on('tool.call', { tool: 'Write' }, () => ({ result: { type: 'create', filePath: work, content: 'const a = 1\n', structuredPatch: [], originalFile: null } }) as never)
+  await $.tool.call({ tool: 'Edit', file_path: 'C:/p/src/one.ts', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Write', file_path: work, content: 'const a = 1\n' } as never)
+  const ui = await $.ui.mount(PANE('terminal'))
+  await ui.press({ key: 'tab-changes' })
+  // podsumowanie i karta liczą tylko kod projektu
+  expect(await ui.find({ type: 'Text', text: '1 edycja w 1 pliku  ' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: /▸ robocze Claude · 1/ })).toBeDefined()
+  expect((await ui.findAll({ type: 'Button', text: 'attack.mts' })).filter(b => b.key?.startsWith('open-')).length).toBe(0)
+  await ui.press({ key: (await ui.find({ type: 'Button', text: /▸ robocze Claude · 1/ }))!.key! })
+  const open = (await ui.findAll({ type: 'Button', text: 'attack.mts' })).find(b => b.key?.startsWith('open-'))!
+  await ui.press({ key: open.key! })
+  expect(await ui.find({ type: 'Text', text: /Plik roboczy Claude/ })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'lab-lesson' })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', key: 'lab-quiz' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('komenda na skrypcie w scratchpad nie jest lekcją, nawet gdy się wywali', async () => {
+  const io = fakeHost()
+  setState('feed', () => [])
+  await mentor.onTool(io, 'Bash', { command: 'node C:\\Users\\x\\AppData\\Local\\Temp\\claude\\s\\scratchpad\\fuzz.mjs' }, { isError: true, text: 'Error: boom' })
+  expect(getState('feed').length).toBe(0)
+  await mentor.onTool(io, 'Bash', { command: 'npm test' }, { isError: true, text: 'Error: 2 failed' })
+  expect(getState('feed').length).toBe(1)
+  setState('feed', () => [])
+})

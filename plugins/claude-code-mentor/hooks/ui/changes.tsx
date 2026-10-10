@@ -15,6 +15,7 @@ import { S } from './state'
 import { lessonBlock } from './lesson'
 import { renderBench } from './bench'
 import { fileIcon, renderFilesSummary } from './files'
+import { SCOPE_LABEL, scopeOf, teachable } from '../engine/scope'
 import { renderReplayDiff, renderReplayHead } from './replay'
 import { renderAgents } from './agents'
 import { renderTasks } from './tasks'
@@ -146,9 +147,10 @@ async function renderList(io: Host, k: Kit, lab: MentorLab): Promise<RenderEleme
   const fc = focus ? conceptById(focus.conceptId) : undefined
   // ostatnie zadanie jednym zdaniem: co, ile zmian, ile plików, kiedy
   const last = groups[0]!
-  const okItems = last.items.filter(c => c.status === 'ok')
-  const files = new Set(last.items.map(c => c.file)).size
-  const failed = last.items.length - okItems.length
+  const learnItems = last.items.filter(c => teachable(scopeOf(c.file, mentor.projectRoot)))
+  const okItems = learnItems.filter(c => c.status === 'ok')
+  const files = new Set(learnItems.map(c => c.file)).size
+  const failed = learnItems.filter(c => c.status === 'failed').length
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
@@ -209,20 +211,79 @@ export function filesOfTask(items: readonly ChangeMeta[]): { file: string; last:
 
 const TASK_ROWS = 8
 
+/** Wiersz pliku w karcie zadania: ikona, nazwa (otwiera ostatnią edycję), katalog, ×N, +/− albo stan. */
+function fileRow(io: Host, k: Kit, f: ReturnType<typeof filesOfTask>[number], key: string, i: number, quiet: boolean): RenderElement {
+  const { Box, Text, Button } = k.E
+  const name = f.file.replace(/\\/g, '/').split('/').pop() || f.file
+  const parts = f.file.replace(/\\/g, '/').split('/').slice(0, -1).filter(Boolean)
+  const d = parts.join('/')
+  const dir = d.length > 28 ? `…/${parts.slice(-2).join('/')}` : d
+  const reverted = f.ok === 0 && f.last.status === 'reverted'
+  return (
+    <Box key={`tf-${key}-${i}`} flexDirection="row" columnGap={1} alignItems="center">
+      {fileIcon(k.E, k.surface, name, `tf-i-${key}-${i}`)}
+      <Button key={`open-${f.last.id}`} plain dimColor={quiet || reverted} onPress={() => mentor.openChange(io, f.last.id)}>
+        {name}
+      </Button>
+      {dir ? (
+        <Box flexShrink={1}>
+          <Text dimColor wrap="truncate-start">
+            {dir}
+          </Text>
+        </Box>
+      ) : null}
+      <Box flexGrow={1} />
+      {f.count > 1 && <Text dimColor>{`×${f.count}`}</Text>}
+      {f.ok > 0 ? (
+        <Text dimColor={quiet}>
+          <Text color={quiet ? undefined : 'success'}>{`+${f.added}`}</Text>
+          <Text color={quiet ? undefined : 'error'}>{` −${f.removed}`}</Text>
+        </Text>
+      ) : (
+        <Text color={f.last.status === 'failed' ? 'error' : undefined} dimColor={f.last.status !== 'failed'}>
+          {f.last.status === 'failed' ? '✗ nie weszła' : reverted ? '↩ cofnięta' : '⊘ wrażliwy'}
+        </Text>
+      )}
+    </Box>
+  )
+}
+
 /** Zadanie (jedno polecenie) jako karta: polecenie, czas, ile edycji i linii, potem pliki jak w filetree. */
 function taskCard(io: Host, k: Kit, g: { key: string; label: string | null; ts: number; items: ChangeMeta[] }, now: number, open: Set<string>): RenderElement {
   const { Box, Text, Button } = k.E
-  const files = filesOfTask(g.items)
+  // kod i konfiguracja projektu na wierzchu; pliki robocze Claude i notatki zwinięte pod spodem
+  const learn = (c: ChangeMeta) => teachable(scopeOf(c.file, mentor.projectRoot))
+  const extra = filesOfTask(g.items.filter(c => !learn(c)))
+  const extraOpen = open.has(`task-x-${g.key}`)
+  const extraToggle = extra.length ? (
+    <Button key={`task-x-${g.key}`} plain dimColor onPress={() => io.set(S.view, v => ({ ...v, openSections: extraOpen ? v.openSections.filter(s => s !== `task-x-${g.key}`) : [...v.openSections, `task-x-${g.key}`] }))}>
+      {`${extraOpen ? '▾' : '▸'} ${[...new Set(extra.map(f => SCOPE_LABEL[scopeOf(f.file, mentor.projectRoot)]))].join(' i ')} · ${extra.length}`}
+    </Button>
+  ) : null
+  const files = filesOfTask(g.items.filter(learn))
+  if (!files.length) {
+    // samo zaplecze Claude: jedna cicha linia zamiast karty
+    return (
+      <Box key={`g-${g.key}`} flexDirection="column" marginTop={1}>
+        <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
+          <Text dimColor wrap="truncate-end">
+            {g.label ? `„${g.label}”` : 'Bez polecenia'}
+          </Text>
+          <Box flexShrink={0}>
+            <Text dimColor>{ago(g.ts, now)}</Text>
+          </Box>
+        </Box>
+        {extraToggle}
+        {extraOpen && extra.map((f, i) => fileRow(io, k, f, `${g.key}-x`, i, true))}
+      </Box>
+    )
+  }
+  const edits = files.reduce((s, f) => s + f.count, 0)
   const added = files.reduce((s, f) => s + f.added, 0)
   const removed = files.reduce((s, f) => s + f.removed, 0)
   const failed = files.reduce((s, f) => s + f.failed, 0)
   const all = open.has(`task-${g.key}`)
   const shown = all ? files : files.slice(0, TASK_ROWS)
-  const dirOf = (p: string) => {
-    const parts = p.replace(/\\/g, '/').split('/').slice(0, -1).filter(Boolean)
-    const d = parts.join('/')
-    return d.length > 28 ? `…/${parts.slice(-2).join('/')}` : d
-  }
   return (
     <Box key={`g-${g.key}`} flexDirection="column" borderStyle="round" borderDimColor paddingX={1} marginTop={1}>
       <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
@@ -234,44 +295,16 @@ function taskCard(io: Host, k: Kit, g: { key: string; label: string | null; ts: 
         </Box>
       </Box>
       <Text>
-        <Text dimColor>{`${g.items.length} ${plural(g.items.length, 'edycja', 'edycje', 'edycji')} w ${files.length} ${files.length === 1 ? 'pliku' : 'plikach'}  `}</Text>
+        <Text dimColor>{`${edits} ${plural(edits, 'edycja', 'edycje', 'edycji')} w ${files.length} ${files.length === 1 ? 'pliku' : 'plikach'}  `}</Text>
         <Text color="success">{`+${added}`}</Text>
         <Text color="error">{` −${removed}`}</Text>
         {failed > 0 && <Text color="error">{`  · nieudane: ${failed}`}</Text>}
       </Text>
       <Box flexDirection="column" marginTop={1}>
-        {shown.map((f, i) => {
-          const name = f.file.replace(/\\/g, '/').split('/').pop() || f.file
-          const dir = dirOf(f.file)
-          return (
-            <Box key={`tf-${g.key}-${i}`} flexDirection="row" columnGap={1} alignItems="center">
-              {fileIcon(k.E, k.surface, name, `tf-i-${g.key}-${i}`)}
-              <Button key={`open-${f.last.id}`} plain onPress={() => mentor.openChange(io, f.last.id)}>
-                {name}
-              </Button>
-              {dir ? (
-                <Box flexShrink={1}>
-                  <Text dimColor wrap="truncate-start">
-                    {dir}
-                  </Text>
-                </Box>
-              ) : null}
-              <Box flexGrow={1} />
-              {f.count > 1 && <Text dimColor>{`×${f.count}`}</Text>}
-              {f.ok > 0 ? (
-                <Text>
-                  <Text color="success">{`+${f.added}`}</Text>
-                  <Text color="error">{` −${f.removed}`}</Text>
-                </Text>
-              ) : (
-                <Text color={f.last.status === 'failed' ? 'error' : undefined} dimColor={f.last.status !== 'failed'}>
-                  {f.last.status === 'failed' ? '✗ nie weszła' : '⊘ wrażliwy'}
-                </Text>
-              )}
-            </Box>
-          )
-        })}
+        {shown.map((f, i) => fileRow(io, k, f, g.key, i, false))}
       </Box>
+      {extraToggle}
+      {extraOpen && extra.map((f, i) => fileRow(io, k, f, `${g.key}-x`, i, true))}
       {files.length > TASK_ROWS && (
         <Button key={`task-more-${g.key}`} plain dimColor onPress={() => io.set(S.view, v => ({ ...v, openSections: all ? v.openSections.filter(s => s !== `task-${g.key}`) : [...v.openSections, `task-${g.key}`] }))}>
           {all ? 'Mniej' : `+ ${files.length - TASK_ROWS} ${plural(files.length - TASK_ROWS, 'plik', 'pliki', 'plików')} więcej`}
@@ -318,7 +351,7 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
     return (
       <Box flexDirection="column">
         {header}
-        {card(k, m.status === 'failed' ? 'warning' : 'subtle', <Text wrap="wrap">{m.status === 'failed' ? 'Ta zmiana nie weszła do pliku: Claude dostał odmowę albo narzędzie zgłosiło błąd. Kod się nie zmienił.' : 'To plik z danymi wrażliwymi (np. .env albo klucze). Mentor nie zapisuje ani nie analizuje jego treści.'}</Text>)}
+        {card(k, m.status === 'failed' ? 'warning' : 'subtle', <Text wrap="wrap">{m.status === 'failed' ? 'Ta zmiana nie weszła do pliku: Claude dostał odmowę albo narzędzie zgłosiło błąd. Kod się nie zmienił.' : m.status === 'reverted' ? 'Ta zmiana nie została w kodzie: przed końcem zadania plik wrócił do poprzedniej wersji albo został usunięty. Mentor nie robi z niej lekcji ani ćwiczeń.' : 'To plik z danymi wrażliwymi (np. .env albo klucze). Mentor nie zapisuje ani nie analizuje jego treści.'}</Text>)}
       </Box>
     )
   }
@@ -422,7 +455,10 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
       {job.state === 'error' ? <Text color="error" wrap="wrap">{`✗ ${job.message}`}</Text> : waiting(k, job.state === 'working' || job.state === 'queued' ? `${job.message} Zwykle 10 do 30 s.` : 'Piszę wyjaśnienie…', mentor.frame, 'lab-wait')}
     </Box>
   )
-  const actions = (
+  // tylko kod i konfiguracja projektu uczą; pliki robocze Claude i notatki bez lekcji i ćwiczeń
+  const learnHere = mentor.teachableChange(m)
+  const scopeNote = learnHere ? null : scopeOf(m.file, mentor.projectRoot) === 'work' ? 'Plik roboczy Claude (scratchpad, plik tymczasowy, pamięć, wynik builda), nie Twój kod. Mentor nie robi z niego lekcji ani ćwiczeń.' : 'Notatki albo dane, nie kod. Mentor nie robi z nich lekcji ani ćwiczeń.'
+  const actions = !learnHere ? muted(k, scopeNote ?? '') : (
     <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
       {m.concepts.length > 0 && !!c && (
         <Button key="lab-lesson" variant={explaining ? undefined : 'primary'} onPress={() => mentor.lessonForChange(io, id)}>
@@ -456,7 +492,7 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
       {lab.error && <Text color="error" wrap="wrap">{lab.error}</Text>}
       {facts.length > 0 && label(k, 'Co się zmieniło')}
       {facts.length > 0 && md(k, facts.map(f => `- ${f}`).join('\n'))}
-      {concepts.length > 0 && <Text dimColor wrap="wrap">{`Warto zrozumieć: ${concepts.join(', ')}`}</Text>}
+      {learnHere && concepts.length > 0 && <Text dimColor wrap="wrap">{`Warto zrozumieć: ${concepts.join(', ')}`}</Text>}
       <Box flexDirection="row" columnGap={1} marginTop={1}>
         {seg('diff', 'Zmiany', true)}
         {seg('before', 'Przed', !!c?.before)}
@@ -469,7 +505,7 @@ async function renderDetail(io: Host, k: Kit, lab: MentorLab, id: string): Promi
       {actions}
       {benchOpen && sim && lab.bench && <Box marginTop={1}>{renderBench(io, k, lab.bench, m.file, m.lang, sim)}</Box>}
       {lessonView}
-      {!canRun && example && muted(k, `Ten kod zależy od reszty projektu, więc nie uruchamiam go w symulatorze. „Zobacz na przykładzie” pokazuje sam mechanizm: ${example.label}.`)}
+      {learnHere && !canRun && example && muted(k, `Ten kod zależy od reszty projektu, więc nie uruchamiam go w symulatorze. „Zobacz na przykładzie” pokazuje sam mechanizm: ${example.label}.`)}
       {renderAlternatives(io, k, lab, id, m.lang)}
     </Box>
   )

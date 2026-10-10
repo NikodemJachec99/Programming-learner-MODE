@@ -12,6 +12,7 @@ import { latestChangeFor } from './activity'
 import { mentor } from '../mentor'
 import type { El, Kit } from './kit'
 import { S } from './state'
+import { scopeOf } from '../engine/scope'
 import { TONES, shimmer, shimmerSvg } from './visuals'
 
 export const FILES_PANE = 'mentor-files'
@@ -25,7 +26,7 @@ const RED = '#f85149'
 const GREY = '#8a8a86'
 const BLUE = '#4a9eed'
 
-const TOUCH_COLOR: Record<Touch, string> = { reading: PURPLE, editing: ORANGE, opened: PURPLE, edited: ORANGE, committed: GREEN, failed: RED, denied: GREY }
+const TOUCH_COLOR: Record<Touch, string> = { reading: PURPLE, editing: ORANGE, opened: PURPLE, edited: ORANGE, committed: GREEN, failed: RED, denied: GREY, work: GREY }
 const ROW_TINT: Partial<Record<Touch, string>> = { committed: 'rgba(63,185,80,0.14)', edited: 'rgba(240,136,62,0.12)', editing: 'rgba(240,136,62,0.12)', reading: 'rgba(163,113,247,0.12)' }
 const GIT_COLOR = { new: GREEN, mod: YELLOW, del: RED } as const
 const GIT_LETTER = { new: 'U', mod: 'M', del: 'D' } as const
@@ -190,7 +191,10 @@ async function nowCard(c: Ctx): Promise<RenderElement> {
 async function touchedList(c: Ctx, max: number): Promise<RenderElement | null> {
   const { Box, Text, Button } = c.E
   const act = await c.io.get(S.activity)
+  // pliki robocze Claude (scratchpad, tymczasowe, pamięć) na końcu, z plakietką „Roboczy”
   const list = touchedFiles(act, c.f.commit)
+    .map(t => (scopeOf(t.path, mentor.projectRoot) === 'work' && !t.act.active ? { ...t, touch: 'work' as const } : t))
+    .sort((a, b) => Number(a.touch === 'work') - Number(b.touch === 'work'))
   if (!list.length) return null
   const changes = await c.io.get(S.changes)
   const root = c.f.root || posix(mentor.projectRoot)

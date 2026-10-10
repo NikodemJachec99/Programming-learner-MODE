@@ -734,6 +734,21 @@ const OPS = {
     });
   },
 
+  /** Usuwa zmiany (pliki jednorazowe Claude: utworzone i usunięte w tej samej turze). */
+  deleteChanges(ctx, args) {
+    const ids = arr(args, 'ids', { max: 500 }).map((x, i) => {
+      if (typeof x !== 'string' || !x || x.length > 200) fail(`ids[${i}] must be a non-empty string`);
+      return x;
+    });
+    if (!ids.length) return { deleted: 0 };
+    return withTx(ctx.db, 'IMMEDIATE', () => {
+      const del = ctx.db.prepare('DELETE FROM changes WHERE id = ?');
+      let n = 0;
+      for (const id of ids) n += Number(del.run(id).changes);
+      return { deleted: n };
+    });
+  },
+
   getChanges(ctx, args) {
     const limit = Math.min(optInt(args?.limit, 'limit') ?? 60, 400);
     const projectId = optStr(args?.projectId, 'projectId', 500);

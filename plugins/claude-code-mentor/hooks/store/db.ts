@@ -18,7 +18,7 @@ const PENDING_KEY = 'pendingOps'
 const PENDING_MAX = 400
 const WRITE_OPS = new Set([
   'addObservations', 'saveChange', 'recordEvidence', 'recordExposure', 'saveLesson', 'markLesson', 'cachePut', 'commitUsage',
-  'saveExercise', 'gradeExercise', 'setNotes', 'setSettings',
+  'saveExercise', 'gradeExercise', 'setNotes', 'setSettings', 'deleteChanges',
 ])
 
 export class DbError extends Error {}
