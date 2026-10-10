@@ -24,11 +24,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
-$MentorDir = Join-Path $Root 'plugins\claude-code-mentor'
+$MentorDir = Join-Path $Root 'plugins\code-mentor'
 $DataDir = Join-Path $env:LOCALAPPDATA 'ClaudeCodeMentor'
 $Market = 'programming-learner-mode'
 $Repo = 'NikodemJachec99/Programming-learner-MODE'
-$Plugins = @('claude-code-mentor')
+$Plugins = @('code-mentor')
 
 function Step($t) { Write-Host "`n== $t" -ForegroundColor Cyan }
 function Ok($t) { Write-Host "   OK  $t" -ForegroundColor Green }
@@ -85,6 +85,8 @@ if ($markets -notmatch [regex]::Escape($Market)) {
 Step 'Instalacja (user scope)'
 $list = (& claude plugin list 2>&1) -join "`n"
 # pasek kontekstu jest teraz częścią Mentora: stary osobny plugin zdejmujemy
+# do 1.4.2 plugin nazywał się claude-code-mentor; nowsze Claude Code tej nazwy nie przyjmują. Dane zostają.
+if ($list -match [regex]::Escape("claude-code-mentor@$Market")) { & claude plugin uninstall "claude-code-mentor@$Market" --scope user | Out-Host; Ok 'Usunięta stara nazwa claude-code-mentor (dane zostają, plugin to teraz code-mentor)' }
 if ($list -match [regex]::Escape("context-bar@$Market")) { & claude plugin uninstall "context-bar@$Market" --scope user | Out-Host; Ok 'Usunięty stary context-bar (pasek jest teraz w Mentorze)' }
 foreach ($p in $Plugins) {
   $id = "$p@$Market"

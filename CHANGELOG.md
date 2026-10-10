@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.5.0
+
+### Nowa nazwa: code-mentor
+
+Claude Code od 2.1.296 nie przyjmuje pluginów, których nazwa zaczyna się od `claude-`. Plugin nazywa się teraz `code-mentor`, katalog w repo to `plugins/code-mentor`. Dane nauki zostają tam, gdzie były.
+
+Przejście ze starej wersji:
+
+```
+/plugin uninstall claude-code-mentor@programming-learner-mode
+/plugin marketplace update programming-learner-mode
+/plugin install code-mentor@programming-learner-mode
+```
+
+`scripts/install.ps1` i `scripts/install.sh` robią to same: odinstalowują starą nazwę i instalują nową. `uninstall` usuwa obie.
+
+Po przejściu otwórz nową sesję albo uruchom Claude ponownie. W sesji otwartej przed przejściem stara wersja zostaje w pamięci i `/reload-plugins` jej nie usuwa, więc nad promptem widać dwa paski.
+
+Baza z historią i wiedzą zostaje. Wynik testu poziomu i oceny lekcji Claude Code trzyma osobno dla każdej nazwy pluginu, więc po przejściu karta testu poziomu może pokazać się jeszcze raz.
+
+### Panele z paska
+
+- Na pasku nad promptem obok „Mentor” są przyciski Agenci, Pliki i Zadania (w wąskim oknie A, P, Z). Przy Agentach i Zadaniach liczba tych, które pracują. Kliknięcie otwiera albo chowa panel.
+- Panele Agenci i Zadania w tle nie otwierają się już same. `/mentor-agents`, `/mentor-files` i `/mentor-tasks` działają jak wcześniej.
+
+### Nauka
+
+- Lekcja na całe zadanie: gdy Claude zmienił kilka plików kodu w jednym poleceniu, lekcja ma kartę „Z zadania” z poleceniem i listą plików, a model dostaje kontekst całego zadania, nie jednej edycji.
+- Podsumowanie z 7 dni: co poszło w górę, odpowiedzi, lekcje, zadania z kodem, co wraca do powtórki i otwarte błędy w rozumowaniu. W Zmianach pokazuje się samo co 3 dni (do zamknięcia), w „Mojej wiedzy” zawsze, `/mentor recap` na żądanie. Same liczby z bazy, bez wywołań modelu.
+- Ekspozycja pojęcia liczy się najwyżej raz na dzień w projekcie. Dziesięć edycji tego samego wzorca w jednej sesji nie podbija już postępu dziesięć razy.
+
+### Dane
+
+- W Ustawieniach obok „Usuń wszystko” są „Wyczyść historię” (zmiany, obserwacje, lekcje) i „Resetuj postęp” (wiedza, odpowiedzi, dowody). Każde z potwierdzeniem i kopią bazy przed czyszczeniem.
+
+### Model lekcji
+
+- W Zaawansowanych, w sekcji AI, pole „Konkretna wersja”: pełny identyfikator modelu (np. `claude-sonnet-5-5`) zamiast aliasu Haiku, Sonnet albo Opus. Puste pole to alias jak wcześniej. Zła nazwa jest odrzucana z komunikatem, a „Test modelu” pokazuje, czy konto ma dostęp do tej wersji.
+- „Effort lekcji”: domyślny dla modelu, niski, średni albo wysoki.
+- Wersja i effort wchodzą do klucza cache lekcji, więc po zmianie lekcja nie przychodzi ze starego cache.
+
+### Język
+
+- Interfejs po polsku albo po angielsku: Ustawienia, „Język / Language”. Lekcje i ćwiczenia od AI powstają w wybranym języku. Biblioteka wbudowanych lekcji zostaje po polsku.
+
+### Kod i CI
+
+- `hooks/mentor.ts` podzielony: pliki, animacje, quizy i dane w `hooks/core/` (z 1870 do 1311 linii w `mentor.ts`). Teksty interfejsu przez `tr('pl', 'en')` z `hooks/i18n.ts`.
+- CI testuje na Claude Code 2.1.296 (wymagany check) i dodatkowo na `@latest` (informacyjnie).
+
 ## 1.4.2
 
 Mentor uczy tylko na tym, co naprawdę zostało w Twoim kodzie.

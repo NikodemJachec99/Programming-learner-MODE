@@ -25,10 +25,10 @@ for arg in "$@"; do
 done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MENTOR_DIR="$ROOT/plugins/claude-code-mentor"
+MENTOR_DIR="$ROOT/plugins/code-mentor"
 MARKET='programming-learner-mode'
 REPO='NikodemJachec99/Programming-learner-MODE'
-PLUGINS='claude-code-mentor'
+PLUGINS='code-mentor'
 
 if [ -n "${CLAUDE_CODE_MENTOR_DATA:-}" ]; then
   DATA_DIR="$CLAUDE_CODE_MENTOR_DATA"
@@ -93,6 +93,11 @@ fi
 step 'Instalacja (user scope)'
 LIST="$(claude plugin list 2>&1 || true)"
 # pasek kontekstu jest teraz częścią Mentora: stary osobny plugin zdejmujemy
+# do 1.4.2 plugin nazywał się claude-code-mentor; nowsze Claude Code tej nazwy nie przyjmują. Dane zostają.
+if printf '%s' "$LIST" | grep -q "claude-code-mentor@$MARKET"; then
+  claude plugin uninstall "claude-code-mentor@$MARKET" --scope user || true
+  ok 'Usunięta stara nazwa claude-code-mentor (dane zostają, plugin to teraz code-mentor)'
+fi
 if printf '%s' "$LIST" | grep -q "context-bar@$MARKET"; then
   claude plugin uninstall "context-bar@$MARKET" --scope user || true
   ok 'Usunięty stary context-bar (pasek jest teraz w Mentorze)'

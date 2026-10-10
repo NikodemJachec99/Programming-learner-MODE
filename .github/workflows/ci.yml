@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: 24
       - name: Testy helpera
-        run: node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
+        run: node --no-warnings --test "plugins/code-mentor/helper/test/*.test.mjs"
       - name: Poprawność manifestów
         if: runner.os == 'Windows'
         shell: pwsh
@@ -39,14 +39,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Claude Code (wersja, na której przechodzą testy lokalnie)
-        run: npm install -g @anthropic-ai/claude-code@2.1.283
+      # przypięta wersja: na niej wszystko musi przechodzić (to zadanie blokuje merge)
+      - name: Claude Code 2.1.296
+        run: npm install -g @anthropic-ai/claude-code@2.1.296
       - name: Walidacja marketplace i pluginu
         run: |
           claude plugin validate .
-          claude plugin validate plugins/claude-code-mentor
+          claude plugin validate plugins/code-mentor
       - name: Testy pluginu
-        run: claude plugin test plugins/claude-code-mentor
+        run: claude plugin test plugins/code-mentor
+
+  plugin-tests-latest:
+    name: Testy pluginu na najnowszym Claude Code (informacyjnie)
+    runs-on: ubuntu-latest
+    env:
+      CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # najnowsza wersja: wcześnie widać, co zepsuje następne wydanie Claude Code (nie blokuje merge)
+      - name: Claude Code latest
+        run: npm install -g @anthropic-ai/claude-code@latest
+      - name: Walidacja i testy
+        run: |
+          claude --version
+          claude plugin validate .
+          claude plugin validate plugins/code-mentor
+          claude plugin test plugins/code-mentor
 
   shell-scripts:
     name: Skrypty macOS i Linux
@@ -62,5 +83,5 @@ jobs:
         run: |
           export CLAUDE_CODE_MENTOR_DATA="$RUNNER_TEMP/mentor-data"
           REQ=$(node -e 'process.stdout.write(JSON.stringify({ v: 1, dataDir: process.argv[1], ops: [{ op: "init" }, { op: "diag" }] }))' "$CLAUDE_CODE_MENTOR_DATA")
-          echo "$REQ" | node --no-warnings plugins/claude-code-mentor/helper/mentor-db.mjs | tee result.json
+          echo "$REQ" | node --no-warnings plugins/code-mentor/helper/mentor-db.mjs | tee result.json
           node -e 'const r = JSON.parse(require("fs").readFileSync("result.json", "utf8")); if (!r.ok || r.results[1].value.integrity !== "ok") process.exit(1)'

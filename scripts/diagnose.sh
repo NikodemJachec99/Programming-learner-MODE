@@ -36,7 +36,7 @@ if [ -n "$NODE" ]; then line 'Node.js' "$("$NODE" --version) ($NODE)"; else line
 
 if [ -n "$NODE" ]; then
   REQ="$("$NODE" -e 'process.stdout.write(JSON.stringify({ v: 1, dataDir: process.argv[1], ops: [{ op: "diag" }] }))' "$DATA_DIR")"
-  RES="$(printf '%s' "$REQ" | "$NODE" --no-warnings "$ROOT/plugins/claude-code-mentor/helper/mentor-db.mjs" 2>&1)"
+  RES="$(printf '%s' "$REQ" | "$NODE" --no-warnings "$ROOT/plugins/code-mentor/helper/mentor-db.mjs" 2>&1)"
   "$NODE" -e '
     const [res, dir] = process.argv.slice(1)
     const G = process.stdout.isTTY ? "\x1b[32m" : "", R = process.stdout.isTTY ? "\x1b[31m" : "", N = process.stdout.isTTY ? "\x1b[0m" : ""
@@ -54,6 +54,6 @@ if [ -n "$NODE" ]; then
 fi
 
 LIST="$(claude plugin list 2>&1 || true)"
-for p in claude-code-mentor; do
+for p in code-mentor; do
   if printf '%s' "$LIST" | grep -q "$p@$MARKET"; then line "$p" 'zainstalowany'; else line "$p" 'nie zainstalowany' 0; fi
 done

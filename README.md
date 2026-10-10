@@ -7,7 +7,7 @@
   <a href="#wymagania"><img alt="Windows i macOS" src="https://img.shields.io/badge/Windows%20%7C%20macOS-0078d4?style=flat-square"></a>
   <a href="#flutter-i-dart"><img alt="Flutter i Dart" src="https://img.shields.io/badge/Flutter%20%26%20Dart-02569B?style=flat-square&logo=flutter&logoColor=white"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-130%20%2F%20130-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-137%20%2F%20137-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licencja-MIT-6b7280?style=flat-square"></a>
 </p>
@@ -28,7 +28,7 @@
 - [Jak to działa](#jak-to-działa)
 - [Instalacja](#instalacja)
 - [Pierwsze kroki](#pierwsze-kroki)
-- [Claude Code Mentor](#claude-code-mentor)
+- [Claude Code Mentor](#code-mentor)
 - [Flutter i Dart](#flutter-i-dart)
 - [Pasek kontekstu](#pasek-kontekstu)
 - [Prywatność](#prywatność)
@@ -88,7 +88,7 @@ Pierwsza zakładka panelu. Odpowiada na pytanie: co Claude właśnie zmienił i 
 
 **Uczy tylko na Twoim kodzie.** Lekcje, ćwiczenia i quizy powstają wyłącznie ze zmian w kodzie i konfiguracji projektu, które zostały w nim na końcu zadania. Pliki robocze Claude (scratchpad, pliki tymczasowe, pamięć i plany), wynik builda, lockfile i notatki widać w liście zwinięte pod „robocze Claude”, ale nie uczą. Plik utworzony i usunięty w tym samym zadaniu znika z historii, a zmiana cofnięta przed końcem zadania jest oznaczona „↩ cofnięta”.
 
-Gdy Claude uruchamia subagentów, z boku otwiera się panel **Agenci** (jak w savvy-progress): koszt, tokeny i czas na kafelkach, a niżej każdy subagent z krabem w kostiumie roli (pirat dla Explore, detektyw dla Plan, inżynier dla zwykłego agenta), zadaniem, modelem, tym, co robi w tej chwili, zajętością kontekstu, kosztem i czasem. Nad promptem przy każdym poleceniu jest pasek zadania: w trakcie pracy jedzie po nim pasmo pikseli, pigułka mówi, ile kroków i plików już poszło, a krab przebiera się za to, co Claude robi (lupa przy czytaniu, klucz przy edycji). Po odpowiedzi pasek robi się zielony z „Gotowe · +42 −10”, a z subagentami pokazuje „Agenci k/n” i procent. ×N i `/mentor-agents` pokazują albo chowają panel. Komendy uruchomione w tle mają własny panel **Zadania w tle** (`/mentor-tasks`): co robią, ostatnie linie wyjścia na żywo (bez sekretów), czas, rozwijane wyjście, „Zatrzymaj” i stan końcowy.
+Na pasku nad promptem obok „Mentor” są przyciski **Agenci**, **Pliki** i **Zadania**. Panele nie otwierają się same: klikasz, kiedy chcesz zajrzeć. Panel **Agenci** (jak w savvy-progress) pokazuje koszt, tokeny i czas na kafelkach, a niżej każdy subagent z krabem w kostiumie roli (pirat dla Explore, detektyw dla Plan, inżynier dla zwykłego agenta), zadaniem, modelem, tym, co robi w tej chwili, zajętością kontekstu, kosztem i czasem. Nad promptem przy każdym poleceniu jest pasek zadania: w trakcie pracy jedzie po nim pasmo pikseli, pigułka mówi, ile kroków i plików już poszło, a krab przebiera się za to, co Claude robi (lupa przy czytaniu, klucz przy edycji). Po odpowiedzi pasek robi się zielony z „Gotowe · +42 −10”, a z subagentami pokazuje „Agenci k/n” i procent. Przycisk na pasku, ×N i `/mentor-agents` pokazują albo chowają panel. Komendy uruchomione w tle mają własny panel **Zadania w tle** (przycisk Zadania albo `/mentor-tasks`): co robią, ostatnie linie wyjścia na żywo (bez sekretów), czas, rozwijane wyjście, „Zatrzymaj” i stan końcowy.
 
 Na górze widać ostatnie zadanie jednym zdaniem: polecenie, ile zmian w ilu plikach, ile dodanych i usuniętych linii, ile nieudanych. Pod nim **pliki tej tury**: zwarte drzewo plików, które Claude czytał i zmieniał. Fioletowy znacznik to odczyt, pomarańczowy edycja w toku, zielony ✓ świeżo zakończona zmiana, czerwony ✗ błąd, który zostaje do końca tury. Po nazwie aktywnego pliku przesuwa się pasmo światła, obok są liczniki `+dodane −usunięte`. Po kilku sekundach plik wraca do neutralnego wyglądu, a kliknięcie nazwy otwiera jego zmianę. Odczyt plików jest obserwowany tylko pasywnie i nie wpływa na poziom wiedzy.
 
@@ -150,10 +150,20 @@ W sesji Claude Code w terminalu:
 
 ```text
 /plugin marketplace add NikodemJachec99/Programming-learner-MODE
-/plugin install claude-code-mentor@programming-learner-mode
+/plugin install code-mentor@programming-learner-mode
 ```
 
 Wybierz zakres **user**, żeby Mentor działał w każdym projekcie.
+
+Masz zainstalowaną starą nazwę `claude-code-mentor` (do 1.4.2)? Nowe Claude Code jej nie wczytają. Odinstaluj ją i zainstaluj `code-mentor`, dane nauki zostają:
+
+```text
+/plugin uninstall claude-code-mentor@programming-learner-mode
+/plugin marketplace update programming-learner-mode
+/plugin install code-mentor@programming-learner-mode
+```
+
+Skrypt z opcji B robi to sam. Potem otwórz nową sesję albo uruchom Claude ponownie: w sesji otwartej przed przejściem stara wersja zostaje w pamięci i nad promptem są dwa paski.
 
 ### Opcja B: skrypt instalacyjny (zalecany)
 
@@ -199,7 +209,7 @@ bash scripts/uninstall.sh --delete-data       # z usunięciem danych (najpierw e
 bash scripts/diagnose.sh                      # diagnostyka, niczego nie zmienia
 ```
 
-Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.4.2”).
+Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.5.0”).
 
 Pracujesz nad kodem Mentora? Po każdej zmianie wystarczy `node scripts/update-local.mjs`: przepisuje wersję z `plugin.json` do kodu i marketplace, aktualizuje instalację i wgrywa nowy kod do cache, więc w otwartej sesji działa już `/reload-plugins`.
 
@@ -367,6 +377,8 @@ Dodatkowo działają:
 
 Limity są pilnowane atomowo w bazie, więc kilka równoległych sesji ich nie przekroczy.
 
+Model lekcji wybierasz w Ustawieniach, w Zaawansowanych: Haiku (domyślny), Sonnet albo Opus. Zamiast aliasu możesz wpisać konkretną wersję, np. `claude-sonnet-5-5`, i ustawić effort (niski, średni, wysoki). „Test modelu” robi 1 krótkie wywołanie i pokazuje, czy konto ma dostęp do tej wersji.
+
 ## Dane i kopie zapasowe
 
 | System | Katalog danych |
@@ -391,7 +403,7 @@ Zmienna `CLAUDE_CODE_MENTOR_DATA` pozwala wskazać inny katalog. W środku:
 
 ```
 plugins/
-  claude-code-mentor/
+  code-mentor/
     hooks/register.tsx      integracja: session.start, prompt.submit, tool.call, turn.complete, /mentor, panel
     hooks/mentor.ts         kontroler: obserwacje, priorytety, kolejka lekcji, ćwiczenia, zapis
     hooks/engine/           pojęcia, diff, ochrona sekretów, lekcje, ćwiczenia, koszty, graf
@@ -414,14 +426,14 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 105 / 105 |
-| `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian, czyszczenie starej historii, usuwanie plików jednorazowych | 20 / 20 |
+| `claude plugin test plugins/code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 111 / 111 |
+| `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian, czyszczenie starej historii, usuwanie plików jednorazowych, „Wyczyść historię” i „Resetuj postęp”, ekspozycja raz dziennie | 21 / 21 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |
 
 ```powershell
-claude plugin test plugins\claude-code-mentor
-node --no-warnings --test "plugins/claude-code-mentor/helper/test/*.test.mjs"
+claude plugin test plugins\code-mentor
+node --no-warnings --test "plugins/code-mentor/helper/test/*.test.mjs"
 ```
 
 CI uruchamia testy pluginu i walidację marketplace, testy helpera na Windows, macOS i Linuxie oraz sprawdza skrypty `.sh`. Test ręczny zmiany konta Claude i restartu aplikacji jest opisany w [docs/TESTING.md](docs/TESTING.md).
@@ -450,6 +462,12 @@ Działają. Na macOS i Linuxie użyj `bash scripts/install.sh`. Baza ląduje w `
 <summary><b>Jakie języki rozumie?</b></summary>
 
 Rozpoznawanie pojęć obejmuje JavaScript, TypeScript, Python, PHP, SQL, Dart z Flutterem i komendy powłoki (w tym `flutter` i `dart`). Symulator wykonuje podzbiór JS/TS i Darta, a dla kodu UI Fluttera pokazuje drzewo widgetów. Eksplorator warunków obsługuje semantykę JS, Pythona 3, PHP 8 i Darta 3, a piaskownica SQL to prawdziwy SQLite.
+</details>
+
+<details>
+<summary><b>Czy jest po angielsku?</b></summary>
+
+Tak. W Ustawieniach wybierz „Język / Language: English”. Cały interfejs przechodzi na angielski, a lekcje i ćwiczenia od AI powstają po angielsku. Biblioteka wbudowanych lekcji (bez AI) zostaje po polsku.
 </details>
 
 <details>
