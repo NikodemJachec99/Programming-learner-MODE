@@ -41,6 +41,7 @@ import { simTotal } from './ui/simcache'
 import { nextChange } from './engine/activity'
 import { nextRead, withOutput } from './engine/tasks'
 import { ancestors, inside, join as joinFs, parentOf, parseStatus, pkey, posix } from './engine/files'
+import { sameText, scopeOf, teachable, workCommand } from './engine/scope'
 import type { FsItem, GitView } from './engine/files'
 import { boundaryQuestion, fromTemplate, gradeChoice, gradeRequest, parseGrade, parseQuiz, predictOutputQuestion, quizRequest } from './engine/quiz'
 import type { Built, Grade } from './engine/quiz'
@@ -166,6 +167,10 @@ export class Mentor {
   private breaker = new Breaker()
   private failedCommands = new Map<string, { obsId: string; ts: number }>()
   private preexisting = new Set<string>()
+  /** Pliki zmienione w tej turze: czy powstały w niej, treść sprzed tury, zmiany i obserwacje (rozliczenie na końcu tury). */
+  private turnFiles = new Map<string, { path: string; created: boolean; original: string | null | undefined; changeIds: string[]; obsIds: string[] }>()
+  /** Obserwacje z plików, które nie uczą (robocze, notatki): bez lekcji, quizów i ekspozycji. */
+  private quietObs = new Set<string>()
   private touchedSince = new Set<string>()
   private quizCount = 0
   private settings: MentorSettings = DEFAULT_SETTINGS
@@ -530,6 +535,12 @@ export class Mentor {
     this.lastChange = null
     if (change) await this.addChange(io, change)
     if (!obs) return
+    if (obs.file && change && change.status === 'ok') this.trackTurnFile(input, ran, obs, change)
+    // zmiana w pliku roboczym albo notatce: widać ją w liście, ale nie uczy i nie zajmuje Mentora
+    if (this.quietObs.has(obs.id)) {
+      if (this.work.turn === this.turn) this.work = { ...this.work, added: this.work.added + obs.added, removed: this.work.removed + obs.removed }
+      return
+    }
     this.turnObs.push(obs)
     if (this.work.turn === this.turn && (obs.kind === 'edit' || obs.kind === 'create')) this.work = { ...this.work, added: this.work.added + obs.added, removed: this.work.removed + obs.removed }
     if (obs.file) this.touchedSince.add(norm(obs.file))
@@ -567,7 +578,10 @@ export class Mentor {
     if (!facts) return { ...base, kind, summary: 'Zmiana bez szczegółów diffu' }
     // wszystko, co dalej powstaje z linii (opis zmiany, nazwy, pojęcia), widzi już tekst bez sekretów
     facts = redactLines(facts)
-    const hits = detectConcepts(base.lang, facts.addedLines, path)
+    // tylko kod i konfiguracja projektu uczą; pliki robocze Claude, wygenerowane i notatki nie
+    const learn = teachable(scopeOf(path, this.projectRoot))
+    if (!learn) this.quietObs.add(id)
+    const hits = learn ? detectConcepts(base.lang, facts.addedLines, path) : []
     const symbols = newSymbols(facts.addedLines)
     let summary = ''
     let k2: MentorObservation['kind'] = kind
@@ -888,7 +902,7 @@ export class Mentor {
   /** Wyjaśnienie zmiany na miejscu, w jej szczegółach, zawsze na kodzie tej zmiany. */
   async lessonForChange(io: Host, id: string): Promise<void> {
     const c = this.changeCache.get(id)
-    if (!c) return
+    if (!c || !this.teachableChange(c)) return
     // drugie kliknięcie chowa wyjaśnienie
     if ((await io.get(S.lab)).lessonFor === id) return void (await io.set(S.lab, l => ({ ...l, lessonFor: null, lessonId: null })))
     const levels = Object.fromEntries((await io.get(S.knowledge)).map(k => [k.id, k.level]))
@@ -915,7 +929,7 @@ export class Mentor {
    */
   async quizForChange(io: Host, id: string): Promise<void> {
     const c = this.changeCache.get(id)
-    if (!c) return
+    if (!c || !this.teachableChange(c)) return
     const levels = Object.fromEntries((await io.get(S.knowledge)).map(k => [k.id, k.level]))
     const concept = interestingConcepts(c.concepts, levels, true)[0] ?? 'functions'
     const now = await io.now()
@@ -976,6 +990,8 @@ export class Mentor {
   private observeBash(input: Record<string, unknown>, ran: { isError?: true; deny?: string; text?: string }, now: number): MentorObservation | null {
     const cmd = String(input.command ?? '')
     if (!cmd.trim()) return null
+    // skrypt Claude w scratchpad albo pliku tymczasowym: jego błędy to nie lekcja o Twoim kodzie
+    if (workCommand(cmd)) return null
     const f = classifyCommand(cmd)
     if (f.kind === 'bash' && !ran.isError) return null // zwykłe komendy bez błędu nie są lekcją
     const id = makeId('o', now)
@@ -1001,8 +1017,90 @@ export class Mentor {
     return base
   }
 
+  /** Zapamiętuje plik zmieniony w tej turze: czy powstał, treść sprzed pierwszej zmiany, id zmian i obserwacji. */
+  private trackTurnFile(input: Record<string, unknown>, ran: { result?: unknown }, obs: MentorObservation, change: ChangeFull): void {
+    const path = String(input.file_path ?? input.notebook_path ?? '')
+    if (!path) return
+    const key = norm(path)
+    const result = (ran.result ?? {}) as { type?: string; originalFile?: string | null }
+    const f = this.turnFiles.get(key) ?? { path, created: obs.kind === 'create' || result.type === 'create', original: typeof result.originalFile === 'string' ? result.originalFile : result.type === 'create' ? null : undefined, changeIds: [], obsIds: [] }
+    f.changeIds.push(change.id)
+    f.obsIds.push(obs.id)
+    this.turnFiles.set(key, f)
+  }
+
+  /**
+   * Rozliczenie tury: co naprawdę zostało w kodzie. Plik utworzony i usunięty w tej samej turze to
+   * plik jednorazowy Claude: znika z historii. Plik, który wrócił do stanu sprzed tury albo został
+   * usunięty, to zmiana cofnięta: zostaje w historii jako „cofnięta”, bez lekcji. Pliki ignorowane
+   * przez gita (wynik builda, lokalne) też nie uczą.
+   */
+  async settleTurn(io: Host): Promise<void> {
+    const files = [...this.turnFiles.values()]
+    this.turnFiles.clear()
+    if (!files.length) return
+    const drop = new Set<string>()
+    const revert = new Set<string>()
+    const quiet = new Set<string>()
+    for (const f of files) {
+      const exists = await io.fsExists(f.path).catch(() => true)
+      if (!exists) {
+        for (const id of f.changeIds) (f.created ? drop : revert).add(id)
+        for (const id of f.obsIds) quiet.add(id)
+        continue
+      }
+      if (typeof f.original === 'string') {
+        const text = await io.fsRead(f.path).catch(() => null)
+        if (text !== null && sameText(text, f.original)) {
+          for (const id of f.changeIds) revert.add(id)
+          for (const id of f.obsIds) quiet.add(id)
+        }
+      }
+    }
+    // ignorowane przez gita: jedno `git check-ignore` na repozytorium
+    const byTop = new Map<string, typeof files>()
+    for (const f of files) {
+      if (f.obsIds.every(id => quiet.has(id))) continue
+      const top = await this.repoTop(io, parentOf(f.path))
+      if (top) byTop.set(top, [...(byTop.get(top) ?? []), f])
+    }
+    for (const [top, list] of byTop) {
+      const r = await io.run(['git', 'check-ignore', '-z', '--stdin'], { cwd: top, stdin: list.map(f => posix(f.path)).join('\0'), timeoutMs: 8000 }).catch(() => null)
+      const ignored = new Set((r?.stdout ?? '').split('\0').filter(Boolean).map(pkey))
+      for (const f of list) if (ignored.has(pkey(f.path))) for (const id of f.obsIds) quiet.add(id)
+    }
+    if (quiet.size) {
+      this.turnObs = this.turnObs.filter(o => !quiet.has(o.id))
+      for (const id of quiet) this.quietObs.add(id)
+      await io.set(S.feed, list => list.filter(o => !quiet.has(o.id)))
+    }
+    if (drop.size) {
+      for (const id of drop) this.changeCache.delete(id)
+      await io.set(S.changes, list => list.filter(c => !drop.has(c.id)))
+      void write(io, this.ctx, [{ op: 'deleteChanges', args: { ids: [...drop] } }]).catch(() => undefined)
+    }
+    if (revert.size) {
+      const saves: Op[] = []
+      for (const id of revert) {
+        const c = this.changeCache.get(id)
+        if (!c) continue
+        const r: ChangeFull = { ...c, status: 'reverted', concepts: [] }
+        this.changeCache.set(id, r)
+        saves.push({ op: 'saveChange', args: { change: { ...r, sessionId: this.sessionId, projectId: this.projectId } } })
+      }
+      await io.set(S.changes, list => list.map(c => (revert.has(c.id) ? { ...c, status: 'reverted' as const, concepts: [] } : c)))
+      if (saves.length) void write(io, this.ctx, saves).catch(() => undefined)
+    }
+  }
+
+  /** Czy zmiana może dać lekcję, ćwiczenie albo quiz: została w kodzie i to kod albo konfiguracja projektu. */
+  teachableChange(c: { status: string; file: string }): boolean {
+    return c.status === 'ok' && teachable(scopeOf(c.file, this.projectRoot))
+  }
+
   /** Koniec tury głównej pętli: zapis, priorytety, kolejka lekcji. */
   async onTurnComplete(io: Host, answer: string): Promise<void> {
+    await this.settleTurn(io).catch(() => undefined)
     const obs = this.turnObs
     this.turnObs = []
     if (!obs.length || this.settings.paused) return

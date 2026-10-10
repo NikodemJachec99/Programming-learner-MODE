@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.2
+
+Mentor uczy tylko na tym, co naprawdę zostało w Twoim kodzie.
+
+- Lekcje, ćwiczenia, quizy i „Warto zrozumieć” powstają tylko ze zmian w kodzie i konfiguracji projektu. Pliki robocze Claude (scratchpad, pliki tymczasowe, pamięć i plany w `~/.claude`), wynik builda (`dist`, `build`, `node_modules`), lockfile i notatki (Markdown, logi, dane) nie uczą i nie podbijają postępu.
+- Plik utworzony i usunięty w tym samym zadaniu to plik jednorazowy Claude: znika z historii zmian i z bazy.
+- Zmiana, której nie ma w kodzie na końcu zadania (plik wrócił do poprzedniej wersji albo został usunięty), zostaje w historii jako „↩ cofnięta”, bez lekcji i ćwiczeń.
+- Pliki ignorowane przez gita nie uczą.
+- Błąd skryptu Claude w scratchpad albo pliku tymczasowym nie jest lekcją o debugowaniu.
+- Lista zmian: w karcie zadania na wierzchu tylko kod projektu, a pliki robocze i notatki zwinięte pod „▸ robocze Claude · N”. Zadanie, w którym Claude ruszał tylko swoje pliki, to jedna cicha linia. Podsumowanie liczy tylko kod projektu.
+- Szczegóły pliku roboczego albo notatki pokazują diff, ale bez „Wyjaśnij”, „Uruchom”, „Sprawdź się” i „Inne podejście”. Edycje po kolei przy zmianie w kodzie pokazują tylko kod projektu.
+- „Claude dotknął”: pliki robocze z plakietką „Roboczy”, na końcu listy.
+
 ## 1.4.1
 
 ### Change Lab

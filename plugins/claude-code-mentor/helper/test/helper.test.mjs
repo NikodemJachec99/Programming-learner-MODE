@@ -754,6 +754,15 @@ test('16. history scrub: scan returns old text fields, apply rewrites only given
   assert.ok(!JSON.stringify(one(dir, 'scrubScan', {})).includes(KEY));
 });
 
+test('17: deleteChanges usuwa tylko wskazane zmiany (pliki jednorazowe)', (t) => {
+  const dir = tmpDir(t);
+  one(dir, 'init');
+  for (const id of ['d1', 'd2', 'd3']) one(dir, 'saveChange', { change: { id, projectId: 'p1', ts: T0, kind: 'edit', file: `${id}.ts`, summary: 'x' } });
+  assert.deepEqual(one(dir, 'deleteChanges', { ids: ['d1', 'd3', 'nie-ma'] }), { deleted: 2 });
+  assert.deepEqual(one(dir, 'getChanges', {}).map((c) => c.id), ['d2']);
+  assert.deepEqual(one(dir, 'deleteChanges', { ids: [] }), { deleted: 0 });
+});
+
 function seedRichDataV1(dir) {
   const ctx = openDatabase(dir, { migrations: MIGRATIONS.filter((m) => m.version === 1) });
   try {

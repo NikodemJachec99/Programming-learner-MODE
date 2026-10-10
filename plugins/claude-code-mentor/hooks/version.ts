@@ -1,6 +1,6 @@
 // Wersja Mentora pokazywana w nagłówku panelu. Źródłem prawdy jest .claude-plugin/plugin.json:
 // scripts/update-local.mjs przepisuje tę stałą, a test pilnuje zgodności.
-export const MENTOR_VERSION = '1.4.1'
+export const MENTOR_VERSION = '1.4.2'
 
 /** Czy wersja a jest nowsza niż b (porównanie liczbowe x.y.z). */
 export function isNewer(a: string, b: string): boolean {

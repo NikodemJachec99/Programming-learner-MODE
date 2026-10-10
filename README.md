@@ -7,7 +7,7 @@
   <a href="#wymagania"><img alt="Windows i macOS" src="https://img.shields.io/badge/Windows%20%7C%20macOS-0078d4?style=flat-square"></a>
   <a href="#flutter-i-dart"><img alt="Flutter i Dart" src="https://img.shields.io/badge/Flutter%20%26%20Dart-02569B?style=flat-square&logo=flutter&logoColor=white"></a>
   <a href="#wymagania"><img alt="Node 22.5+" src="https://img.shields.io/badge/Node-22.5%2B-339933?style=flat-square"></a>
-  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-125%20%2F%20125-16a34a?style=flat-square"></a>
+  <a href="#testy"><img alt="testy" src="https://img.shields.io/badge/testy-130%20%2F%20130-16a34a?style=flat-square"></a>
   <a href="#prywatność"><img alt="local-first" src="https://img.shields.io/badge/dane-tylko%20lokalnie-827dbd?style=flat-square"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licencja-MIT-6b7280?style=flat-square"></a>
 </p>
@@ -85,6 +85,8 @@ Wszystko dzieje się w osobnym panelu obok rozmowy. Normalna praca z Claude zost
 ## Change Lab
 
 Pierwsza zakładka panelu. Odpowiada na pytanie: co Claude właśnie zmienił i co to zmienia w działaniu.
+
+**Uczy tylko na Twoim kodzie.** Lekcje, ćwiczenia i quizy powstają wyłącznie ze zmian w kodzie i konfiguracji projektu, które zostały w nim na końcu zadania. Pliki robocze Claude (scratchpad, pliki tymczasowe, pamięć i plany), wynik builda, lockfile i notatki widać w liście zwinięte pod „robocze Claude”, ale nie uczą. Plik utworzony i usunięty w tym samym zadaniu znika z historii, a zmiana cofnięta przed końcem zadania jest oznaczona „↩ cofnięta”.
 
 Gdy Claude uruchamia subagentów, z boku otwiera się panel **Agenci** (jak w savvy-progress): koszt, tokeny i czas na kafelkach, a niżej każdy subagent z krabem w kostiumie roli (pirat dla Explore, detektyw dla Plan, inżynier dla zwykłego agenta), zadaniem, modelem, tym, co robi w tej chwili, zajętością kontekstu, kosztem i czasem. Nad promptem przy każdym poleceniu jest pasek zadania: w trakcie pracy jedzie po nim pasmo pikseli, pigułka mówi, ile kroków i plików już poszło, a krab przebiera się za to, co Claude robi (lupa przy czytaniu, klucz przy edycji). Po odpowiedzi pasek robi się zielony z „Gotowe · +42 −10”, a z subagentami pokazuje „Agenci k/n” i procent. ×N i `/mentor-agents` pokazują albo chowają panel. Komendy uruchomione w tle mają własny panel **Zadania w tle** (`/mentor-tasks`): co robią, ostatnie linie wyjścia na żywo (bez sekretów), czas, rozwijane wyjście, „Zatrzymaj” i stan końcowy.
 
@@ -197,7 +199,7 @@ bash scripts/uninstall.sh --delete-data       # z usunięciem danych (najpierw e
 bash scripts/diagnose.sh                      # diagnostyka, niczego nie zmienia
 ```
 
-Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.4.1”).
+Po aktualizacji otwarta sesja dalej działa na starej wersji, bo Claude Code trzyma kopię pluginu w cache. Mentor to wykrywa i pokazuje w panelu: „Zainstalowana jest nowsza wersja …, wpisz /reload-plugins albo otwórz nową sesję”. Aktualną wersję widać w nagłówku panelu („Claude Code Mentor 1.4.2”).
 
 Pracujesz nad kodem Mentora? Po każdej zmianie wystarczy `node scripts/update-local.mjs`: przepisuje wersję z `plugin.json` do kodu i marketplace, aktualizuje instalację i wgrywa nowy kod do cache, więc w otwartej sesji działa już `/reload-plugins`.
 
@@ -412,8 +414,8 @@ Najważniejsze decyzje:
 
 | Zestaw | Wynik |
 |---|---|
-| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 101 / 101 |
-| `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian, czyszczenie starej historii | 19 / 19 |
+| `claude plugin test plugins/claude-code-mentor`: Change Lab, symulator JS i Darta, Flutter, silnik, prywatność, UI na Desktop i w terminalu, przezroczystość hooków | 105 / 105 |
+| `node --test` helpera bazy: migracje (w tym v1 → v2 bez utraty danych), model opanowania, 8 procesów równolegle, eksport i import, historia zmian, czyszczenie starej historii, usuwanie plików jednorazowych | 20 / 20 |
 | `node --test` piaskownicy SQL: NULL jako UNKNOWN, LEFT JOIN, COUNT(kolumna), blokada ATTACH | 5 / 5 |
 | `claude plugin validate`: marketplace i oba pluginy | ✔ |
 
